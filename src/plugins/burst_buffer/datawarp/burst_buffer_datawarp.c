@@ -5692,3 +5692,22 @@ extern char *bb_p_xlate_bb_2_tres_str(char *burst_buffer)
 
 	return result;
 }
+
+/*
+ * For a given job, return it's submitted burst buffer space requirement
+ */
+// TODO: test
+extern uint64_t bb_p_job_get_size(job_record_t *job_ptr, uint64_t granularity)
+{
+	bb_job_t *bb_job;
+	uint64_t size = 0;
+
+	slurm_mutex_lock(&bb_state.bb_mutex);
+	if ((bb_job = _get_bb_job(job_ptr)))
+	{
+		size = bb_granularity(bb_job->total_size, granularity);
+	}
+	slurm_mutex_unlock(&bb_state.bb_mutex);
+
+	return size;
+}

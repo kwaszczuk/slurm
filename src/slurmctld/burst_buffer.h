@@ -41,6 +41,8 @@
 #include "src/common/pack.h"
 #include "src/slurmctld/slurmctld.h"
 
+typedef uint64_t bb_space_t;
+
 /*
  * Initialize the burst buffer infrastructure.
  *
@@ -218,5 +220,10 @@ extern int bb_g_job_cancel(job_record_t *job_ptr);
  * Caller must xfree the return value
  */
 extern char *bb_g_xlate_bb_2_tres_str(char *burst_buffer);
+
+/*
+ * For a given job, return it's submitted burst buffer space requirement
+ */
+extern uint64_t bb_g_job_get_size(job_record_t *job_ptr, uint64_t granularity);
 
 #endif /* !_SLURM_BURST_BUFFER_H */

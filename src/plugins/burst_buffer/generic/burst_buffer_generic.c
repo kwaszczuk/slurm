@@ -294,3 +294,11 @@ extern char *bb_p_xlate_bb_2_tres_str(char *burst_buffer)
 {
 	return NULL;
 }
+
+/*
+ * For a given job, return it's submitted burst buffer space requirement
+ */
+extern uint64_t bb_p_job_get_size(job_record_t *job_ptr, uint64_t granularity)
+{
+	return 0;
+}
