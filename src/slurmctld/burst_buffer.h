@@ -226,4 +226,9 @@ extern char *bb_g_xlate_bb_2_tres_str(char *burst_buffer);
  */
 extern uint64_t bb_g_job_get_size(job_record_t *job_ptr, uint64_t granularity);
 
+/*
+ * For a given job, return it's bb state
+ */
+extern int bb_g_job_get_state(job_record_t *job_ptr);
+
 #endif /* !_SLURM_BURST_BUFFER_H */

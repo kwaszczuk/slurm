@@ -302,3 +302,11 @@ extern uint64_t bb_p_job_get_size(job_record_t *job_ptr, uint64_t granularity)
 {
 	return 0;
 }
+
+/*
+ * For a given job, return it's bb state
+ */
+extern int bb_p_job_get_ssze(job_record_t *job_ptr)
+{
+	return BB_STATE_PENDING;
+}

@@ -5704,10 +5704,27 @@ extern uint64_t bb_p_job_get_size(job_record_t *job_ptr, uint64_t granularity)
 
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	if ((bb_job = _get_bb_job(job_ptr)))
-	{
 		size = bb_granularity(bb_job->total_size, granularity);
-	}
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 
 	return size;
+}
+
+/*
+ * For a given job, return it's bb state
+ */
+// TODO: test
+extern int bb_p_job_get_state(job_record_t *job_ptr)
+{
+	bb_job_t *bb_job;
+	int rc;
+
+	slurm_mutex_lock(&bb_state.bb_mutex);
+	if ((bb_job = _get_bb_job(job_ptr)))
+		rc = bb_job->state;
+	else
+		rc = BB_STATE_NOT_USED;
+	slurm_mutex_unlock(&bb_state.bb_mutex);
+
+	return rc;
 }
