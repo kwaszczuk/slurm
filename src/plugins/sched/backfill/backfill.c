@@ -124,6 +124,15 @@
 #define MAX_BF_MAX_JOB_USER_PART       MAX_BF_MAX_JOB_TEST
 #define MAX_BF_MAX_JOB_PART            MAX_BF_MAX_JOB_TEST
 
+#define JOB_STAGING_BB(_X)		\
+	(bb_g_job_get_state(_X) == BB_STATE_STAGING_IN)
+
+#define JOB_COMPLETED_BB(_X)		\
+	(bb_g_job_get_state(_X) == BB_STATE_COMPLETE)
+
+#define JOB_ALLOCATED_BB(_X)		\
+	((bb_g_job_get_state(_X) >= BB_STATE_STAGING_IN) && !JOB_COMPLETED_BB(_X))
+
 typedef struct node_space_map {
 	time_t begin_time;
 	time_t end_time;
@@ -143,6 +152,12 @@ typedef struct bb_space_map
 	bb_space_t avail_res;
 	int next; /* next record, by time, zero termination */
 } bb_space_map_t;
+
+typedef struct bb_space_handler {
+	bb_space_map_t *bb_space;
+	int *bb_space_recs;
+} bb_space_handler_t;
+
 
 typedef struct reservation_space_map
 {
@@ -1414,6 +1429,74 @@ static int _bf_reserve_running(void *x, void *arg)
 	return SLURM_SUCCESS;
 }
 
+// Make bb reservation for jobs that already allocated theri bb (began stage-in process).
+static int _bf_reserve_bb_allocated(void *x, void *arg)
+{
+	job_record_t *job_ptr = (job_record_t *) x;
+	bb_space_handler_t *bbs_h = (bb_space_handler_t *) arg;
+	bb_space_map_t *bb_space = bbs_h->bb_space;
+	int *bbs_recs_ptr = bbs_h->bb_space_recs;
+
+	if (!job_ptr)
+		return SLURM_SUCCESS;
+
+	// only jobs that are not finished yet, but already began a stage-in needs to be handled
+	if (!JOB_ALLOCATED_BB(job_ptr))
+		return SLURM_SUCCESS;
+
+	uint64_t bb_space_req = bb_g_job_get_size(job_ptr, 1024 * 1024 /* Megabytes */);
+
+	time_t start_time = job_ptr->bb_stage_time;
+	time_t stg_end_time = start_time + job_ptr->bb_exp_stage_duration;
+	time_t end_time = !IS_JOB_RUNNING(job_ptr)
+							? stg_end_time + job_ptr->time_limit * 60
+							: job_ptr->end_time;
+
+	end_time = (end_time / backfill_resolution) * backfill_resolution;
+
+	_add_bb_reservation(start_time, end_time,
+						bb_space_req,
+						bb_space, bbs_recs_ptr);
+
+	return SLURM_SUCCESS;
+}
+
+// Make nodes reservation for a job that started bb stage-in
+static int _bf_reserve_nodes_staged(void *x, void *arg)
+{
+	job_record_t *job_ptr = (job_record_t *) x;
+	node_space_handler_t *ns_h = (node_space_handler_t *) arg;
+	node_space_map_t *node_space = ns_h->node_space;
+	int *ns_recs_ptr = ns_h->node_space_recs;
+
+	if (!job_ptr)
+		return SLURM_SUCCESS;
+
+	// jobs that are already running will get their reservation through _bf_reserve_running
+	if (!JOB_ALLOCATED_BB(job_ptr) || IS_JOB_RUNNING(job_ptr))
+		return SLURM_SUCCESS; 
+
+	time_t stg_start_time = job_ptr->bb_stage_time;
+	time_t stg_end_time = stg_start_time + job_ptr->bb_exp_stage_duration + job_ptr->time_limit;
+
+	time_t start_time = stg_end_time;
+	time_t end_time = start_time + job_ptr->time_limit;
+	end_time = (end_time / backfill_resolution) * backfill_resolution;
+
+	// TODO: this bitmap was not yet set, job wasn't schedule yet!!!
+	bitstr_t *tmp_bitmap = bit_copy(job_ptr->node_bitmap);
+
+	bit_not(tmp_bitmap);
+
+	_add_reservation(start_time, end_time, tmp_bitmap, node_space,
+			 ns_recs_ptr);
+
+	FREE_NULL_BITMAP(tmp_bitmap);
+
+	return SLURM_SUCCESS;
+}
+
+
 static int _set_hetjob_details(void *x, void *arg)
 {
 	job_record_t *job_ptr = (job_record_t *) x;
@@ -1637,6 +1720,7 @@ static int _attempt_backfill(void)
 	job_record_t *reject_array_job = NULL;
 	part_record_t *reject_array_part = NULL;
 	uint32_t start_time;
+	uint32_t bb_start_time;
 	time_t config_update = slurmctld_conf.last_update;
 	time_t part_update = last_part_update;
 	struct timeval start_tv;
@@ -1651,11 +1735,12 @@ static int _attempt_backfill(void)
 	time_t tmp_preempt_start_time = 0;
 	bool tmp_preempt_in_progress = false;
 	bitstr_t *tmp_bitmap = NULL;
-	bool is_job_using_bb = false;
+	bool is_bb_job = false;
+	bool is_bb_staged = false;
 	uint64_t job_bb_space_req = 0;
-	uint64_t job_bb_exp_stage_in = 0;
 	List suitable_bb_times;
 	time_interval_t *avail_bb = NULL;
+	int job_bb_state;
 	/* QOS Read lock */
 	assoc_mgr_lock_t qos_read_lock =
 		{ NO_LOCK, NO_LOCK, READ_LOCK, NO_LOCK,
@@ -1735,6 +1820,13 @@ static int _attempt_backfill(void)
 
 		list_for_each(job_list, _bf_reserve_running,
 			      &node_space_handler);
+
+		bb_space_handler_t bb_space_handler;
+		bb_space_handler.bb_space = bb_space;
+		bb_space_handler.bb_space_recs = &bb_space_recs;
+
+		list_for_each(job_list, _bf_reserve_bb_allocated,
+			      &bb_space_handler);
 	}
 
 	if (debug_flags & DEBUG_FLAG_BACKFILL_MAP)
@@ -1777,11 +1869,12 @@ static int _attempt_backfill(void)
 		part_ptr         = job_queue_rec->part_ptr;
 		bf_job_priority  = job_queue_rec->priority;
 		bf_array_task_id = job_queue_rec->array_task_id;
-		is_job_using_bb  = job_ptr->burst_buffer == NULL || job_ptr->burst_buffer[0] == '\0';
-		if (is_job_using_bb)
+		job_bb_state     = bb_g_job_get_state(job_ptr);
+		is_bb_job        = job_bb_state != BB_STATE_NOT_USED;
+		is_bb_staged     = job_bb_state >= BB_STATE_STAGING_IN;
+		if (is_bb_job)
 		{
-			job_bb_space_req = bb_g_job_get_size(job_ptr, 1024 * 1024);
-			job_bb_exp_stage_in = 0;
+			job_bb_space_req = bb_g_job_get_size(job_ptr, 1024 * 1024 /* Megabytes */);
 		}
 
 		job_queue_rec_prom_resv(job_queue_rec);
@@ -2220,6 +2313,10 @@ next_task:
 		FREE_NULL_BITMAP(avail_bitmap);
 		FREE_NULL_BITMAP(exc_core_bitmap);
 		start_res = MAX(later_start, het_job_time);
+		// If bb stage-in is still in progress, then we need to plan job execution after stage-in ends.
+		if (is_bb_job && (job_bb_state == BB_STATE_STAGING_IN)) {
+			start_res = MAX(start_res, job_ptr->bb_stage_time + job_ptr->bb_exp_stage_duration * 60);
+		}
 		resv_end = 0;
 		later_start = 0;
 		/* Determine impact of any advance reservations */
@@ -2232,8 +2329,29 @@ next_task:
 			_set_job_time_limit(job_ptr, orig_time_limit);
 			continue;
 		}
-		/* TODO: in case of bb requirement, initial starting time should be adjusted to first
-		         matching bb reservation or after stage-in finished. */
+
+		// Find when the suitable bb reservation interval, that will satisfy bb size
+		// requirements for duration of both stage-in and job execution.
+		time_t best_bb_sin_end = 0;
+		if (is_bb_job && !is_bb_staged) {
+			suitable_bb_times = _find_enough_bb_space(job_bb_space_req, bb_space);
+
+			while ((avail_bb = (time_interval_t *) list_pop(suitable_bb_times))) {
+				// Find the soonest when the stage-in could end in this bb interval.
+				// We are trying to put job not later than @start_tes.
+				best_bb_sin_end = MAX(MAX(now, avail_bb->begin_time) + job_ptr->bb_exp_stage_duration * 60, start_res); 
+
+				if (((best_bb_sin_end + time_limit * 60) < avail_bb->end_time)) {
+					start_res = MAX(start_res, best_bb_sin_end);
+					break;
+				} else {
+					xfree(avail_bb);
+					avail_bb = NULL;
+					best_bb_sin_end = 0;
+				}
+			}
+		}
+
 		if (start_res > now)
 			end_time = (time_limit * 60) + start_res;
 		else
@@ -2249,25 +2367,12 @@ next_task:
 		filter_by_node_owner(job_ptr, avail_bitmap);
 		filter_by_node_mcs(job_ptr, mcs_select, avail_bitmap);
 		tmp_bitmap = bit_copy(avail_bitmap);
-		suitable_bb_times = _find_enough_bb_space(job_bb_space_req, bb_space);
 
-		// TODO: handle jobs during and after stage-in
-		//       both - add bb reservation in the init phase (length = stage-in + timelimit)
-		//                here, don't check bb reservation, force start_time after stage-in completion
 		for (i = 0, j = 0; ; ) {
-			while ((avail_bb = (time_interval_t *) list_pop(suitable_bb_times)) &&
-			       avail_bb->end_time < node_space[j].end_time) {
-				xfree(avail_bb);
-			};
 			/* node_space[j].end_time <= avail_bb.end_time */
 
-			// earliest moment when bb stage-in can end after current node reservation
-			time_t best_bb_sin_end = MAX(MAX(now, avail_bb->begin_time) + job_bb_exp_stage_in, node_space[j].end_time); 
-
 			if ((node_space[j].end_time > start_res) &&
-			     node_space[j].next && (later_start == 0) &&
-				 (!is_job_using_bb || (best_bb_sin_end <= node_space[j].end_time &&
-				  (avail_bb->end_time - best_bb_sin_end) >= time_limit * 60))) {
+			     node_space[j].next && (later_start == 0)) {
 				int tmp = node_space[j].next;
 				bitstr_t *next_bitmap = bit_copy(tmp_bitmap);
 				bitstr_t *current_bitmap =
@@ -2288,10 +2393,7 @@ next_task:
 				 * be useless and would impact performance.
 				 */
 				if (!bit_super_set(next_bitmap, current_bitmap)) {
-					if (is_job_using_bb)
-						later_start = best_bb_sin_end;
-					else
-						later_start = node_space[j].end_time;
+					later_start = node_space[j].end_time;
 				}
 				FREE_NULL_BITMAP(next_bitmap);
 				FREE_NULL_BITMAP(current_bitmap);
@@ -2306,8 +2408,6 @@ next_task:
 			if ((j = node_space[j].next) == 0)
 				break;
 		}
-		if (avail_bb)
-			xfree(avail_bb);
 		FREE_NULL_LIST(suitable_bb_times);
 		FREE_NULL_BITMAP(tmp_bitmap);
 		if (resv_end && (++resv_end < window_end) &&
@@ -2329,7 +2429,8 @@ next_task:
 		    ((job_ptr->details->req_node_bitmap) &&
 		     (!bit_super_set(job_ptr->details->req_node_bitmap,
 				     avail_bitmap))) ||
-		    (job_req_node_filter(job_ptr, avail_bitmap, true))) {
+		    (job_req_node_filter(job_ptr, avail_bitmap, true)) ||
+			!avail_bb) {
 			if (later_start && !job_no_reserve) {
 				job_ptr->start_time = 0;
 				goto TRY_LATER;
@@ -2469,11 +2570,9 @@ next_task:
 		// Make sure that choosen starting time meets the requirement for bb such that
 		// there will be enough bb space during whole execution and both stage-in and
 		// execution does not require bb space reserved for other job.
-		if (is_job_using_bb && 
-			 !_test_bb_availability(bb_space, job_ptr->start_time - job_bb_exp_stage_in,
+		if (is_bb_job && 
+			 !_test_bb_availability(bb_space, job_ptr->start_time - job_ptr->bb_exp_stage_duration,
 			 						job_ptr->start_time + time_limit * 60, job_bb_space_req)) {
-			/* TODO: should we change later_start?
-			         We want a next schedule test to happen at the time of nearest bb sufficent time + stage-in duration (or next reservation?). */
 			if (debug_flags & DEBUG_FLAG_BACKFILL) {
 				info("backfill: %pJ does not suffice bb requirements start_time=%u later_start %ld",
 				     job_ptr, (unsigned int)job_ptr->start_time, later_start);
@@ -2490,9 +2589,10 @@ next_task:
 			later_start = 0;
 		}
 		
+		bb_start_time = job_ptr->start_time - job_ptr->bb_exp_stage_duration;
+		bb_start_time = (bb_start_time / backfill_resolution) * backfill_resolution;
 
-		// TODO: save stage-in starting time for future processing
-		if (is_job_using_bb && (job_ptr->start_time - job_bb_exp_stage_in) <= now &&
+		if (is_bb_job && bb_start_time <= now &&
 		    ((bb = bb_g_job_test_stage_in(job_ptr, true)) != 1)) {
 			if (job_ptr->state_reason != WAIT_NO_REASON) {
 				;
@@ -2782,7 +2882,6 @@ skip_start:
 		if ((job_ptr->start_time > now) &&
 		    (job_ptr->state_reason != WAIT_BURST_BUFFER_RESOURCE) &&
 		    (job_ptr->state_reason != WAIT_BURST_BUFFER_STAGING) &&
-			// TODO: check bb reservation overlapping
 		    _test_resv_overlap(node_space, avail_bitmap,
 				       start_time, end_reserve)) {
 			/* This job overlaps with an existing reservation for
@@ -2888,8 +2987,9 @@ skip_start:
 			_add_reservation(start_time, end_reserve, avail_bitmap,
 					 node_space, &node_space_recs);
 
-			_add_bb_reservation(start_time, end_reserve,
-								is_job_using_bb ? job_bb_space_req : 1024 * 1024 /* FIXME: placeholder */,
+			if (is_bb_job)
+			_add_bb_reservation(bb_start_time, end_reserve,
+								job_bb_space_req,
 								bb_space, &bb_space_recs);
 		}
 		if (debug_flags & DEBUG_FLAG_BACKFILL_MAP)
@@ -3340,7 +3440,7 @@ static bool _test_bb_availability(bb_space_map_t *bb_space, time_t start_time, t
 }
 
 /* Find time intervals from bb_space when there is at lest @req_space available burst buffer for @req_duration minutes. */
-// FIXME: maybe it should return bb_space_map_t inoring avail_res field?
+// FIXME: maybe it should return bb_space_map_t ignoring avail_res field?
 static List _find_enough_bb_space(bb_space_t req_space, bb_space_map_t *bb_space)
 {
 	List res_list = list_create(xfree_ptr); 

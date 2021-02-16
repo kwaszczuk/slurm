@@ -1671,7 +1671,7 @@ static void *_start_stage_in(void *x)
 					     bb_job->total_size,
 					     stage_args->pool, &bb_state,
 					     true);
-				bb_alloc->create_time = time(NULL);
+				bb_alloc->create_time = job_ptr->bb_stage_time = time(NULL);
 			}
 		}
 	}

@@ -687,6 +687,8 @@ struct job_record {
 	uint32_t bit_flags;             /* various job flags */
 	char *burst_buffer;		/* burst buffer specification */
 	char *burst_buffer_state;	/* burst buffer state */
+	time_t bb_stage_time;		/* time stage-in actually began */
+	time_t bb_exp_stage_duration;		/* expect time that stage-in will take */
 	char *clusters;			/* clusters job is submitted to with -M
 					   option */
 	char *comment;			/* arbitrary comment */

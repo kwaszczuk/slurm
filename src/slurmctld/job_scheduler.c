@@ -1432,6 +1432,8 @@ next_part:
 
 			job_ptr->part_ptr = part_ptr;
 		}
+		// HACK: avoid FIFO scheduler from running
+		goto fail_this_part;
 
 		job_ptr->last_sched_eval = time(NULL);
 
