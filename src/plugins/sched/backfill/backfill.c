@@ -1477,7 +1477,7 @@ static int _bf_reserve_nodes_staged(void *x, void *arg)
 		return SLURM_SUCCESS; 
 
 	time_t stg_start_time = job_ptr->bb_stage_time;
-	time_t stg_end_time = stg_start_time + job_ptr->bb_exp_stage_duration + job_ptr->time_limit;
+	time_t stg_end_time = stg_start_time + job_ptr->bb_exp_stage_duration + job_ptr->time_limit * 60;
 
 	time_t start_time = stg_end_time;
 	time_t end_time = start_time + job_ptr->time_limit;
@@ -1809,7 +1809,7 @@ static int _attempt_backfill(void)
 	bb_space = xmalloc(sizeof(bb_space_map_t) * (max_backfill_job_cnt * 2 + 1));
 	bb_space[0].begin_time = sched_start;
 	bb_space[0].end_time = window_end;
-	bb_space[0].avail_res = bb_g_get_system_size(NULL);
+	bb_space[0].avail_res = bb_g_get_system_size("burst_buffer/datawarp");
 	bb_space[0].next = 0;
 	bb_space_recs = 1;
 
@@ -1872,6 +1872,7 @@ static int _attempt_backfill(void)
 		job_bb_state     = bb_g_job_get_state(job_ptr);
 		is_bb_job        = job_bb_state != BB_STATE_NOT_USED;
 		is_bb_staged     = job_bb_state >= BB_STATE_STAGING_IN;
+		job_ptr->bb_exp_stage_duration = 1;
 		if (is_bb_job)
 		{
 			job_bb_space_req = bb_g_job_get_size(job_ptr, 1024 * 1024 /* Megabytes */);
@@ -2315,7 +2316,7 @@ next_task:
 		start_res = MAX(later_start, het_job_time);
 		// If bb stage-in is still in progress, then we need to plan job execution after stage-in ends.
 		if (is_bb_job && (job_bb_state == BB_STATE_STAGING_IN)) {
-			start_res = MAX(start_res, job_ptr->bb_stage_time + job_ptr->bb_exp_stage_duration * 60);
+			start_res = MAX(start_res, job_ptr->bb_stage_time + job_ptr->bb_exp_stage_duration);
 		}
 		resv_end = 0;
 		later_start = 0;
@@ -2339,7 +2340,7 @@ next_task:
 			while ((avail_bb = (time_interval_t *) list_pop(suitable_bb_times))) {
 				// Find the soonest when the stage-in could end in this bb interval.
 				// We are trying to put job not later than @start_tes.
-				best_bb_sin_end = MAX(MAX(now, avail_bb->begin_time) + job_ptr->bb_exp_stage_duration * 60, start_res); 
+				best_bb_sin_end = MAX(MAX(now, avail_bb->begin_time) + job_ptr->bb_exp_stage_duration, start_res);
 
 				if (((best_bb_sin_end + time_limit * 60) < avail_bb->end_time)) {
 					start_res = MAX(start_res, best_bb_sin_end);
@@ -2430,7 +2431,7 @@ next_task:
 		     (!bit_super_set(job_ptr->details->req_node_bitmap,
 				     avail_bitmap))) ||
 		    (job_req_node_filter(job_ptr, avail_bitmap, true)) ||
-			!avail_bb) {
+			(is_bb_job && !is_bb_staged && !avail_bb)) {
 			if (later_start && !job_no_reserve) {
 				job_ptr->start_time = 0;
 				goto TRY_LATER;
