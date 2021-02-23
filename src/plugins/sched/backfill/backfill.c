@@ -1447,7 +1447,7 @@ static int _bf_reserve_bb_allocated(void *x, void *arg)
 	uint64_t bb_space_req = bb_g_job_get_size(job_ptr, 1024 * 1024 /* Megabytes */);
 
 	time_t start_time = job_ptr->bb_stage_time;
-	time_t stg_end_time = start_time + job_ptr->bb_exp_stage_duration;
+	time_t stg_end_time = start_time + bb_g_job_get_stage_in_duration(job_ptr);
 	time_t end_time = !IS_JOB_RUNNING(job_ptr)
 							? stg_end_time + job_ptr->time_limit * 60
 							: job_ptr->end_time;
@@ -1477,7 +1477,7 @@ static int _bf_reserve_nodes_staged(void *x, void *arg)
 		return SLURM_SUCCESS; 
 
 	time_t stg_start_time = job_ptr->bb_stage_time;
-	time_t stg_end_time = stg_start_time + job_ptr->bb_exp_stage_duration + job_ptr->time_limit * 60;
+	time_t stg_end_time = stg_start_time + bb_g_job_get_stage_in_duration(job_ptr) + job_ptr->time_limit * 60;
 
 	time_t start_time = stg_end_time;
 	time_t end_time = start_time + job_ptr->time_limit;
@@ -1737,7 +1737,7 @@ static int _attempt_backfill(void)
 	bitstr_t *tmp_bitmap = NULL;
 	bool is_bb_job = false;
 	bool is_bb_staged = false;
-	uint64_t job_bb_space_req = 0;
+	uint64_t job_bb_space_req = 0, job_bb_stage_in_duration = 0;
 	List suitable_bb_times;
 	time_interval_t *avail_bb = NULL;
 	int job_bb_state;
@@ -1872,9 +1872,9 @@ static int _attempt_backfill(void)
 		job_bb_state     = bb_g_job_get_state(job_ptr);
 		is_bb_job        = job_bb_state != BB_STATE_NOT_USED;
 		is_bb_staged     = job_bb_state >= BB_STATE_STAGING_IN;
-		job_ptr->bb_exp_stage_duration = 1;
 		if (is_bb_job)
 		{
+			job_bb_stage_in_duration = bb_g_job_get_stage_in_duration(job_ptr);
 			job_bb_space_req = bb_g_job_get_size(job_ptr, 1024 * 1024 /* Megabytes */);
 		}
 
@@ -2316,7 +2316,7 @@ next_task:
 		start_res = MAX(later_start, het_job_time);
 		// If bb stage-in is still in progress, then we need to plan job execution after stage-in ends.
 		if (is_bb_job && (job_bb_state == BB_STATE_STAGING_IN)) {
-			start_res = MAX(start_res, job_ptr->bb_stage_time + job_ptr->bb_exp_stage_duration);
+			start_res = MAX(start_res, job_ptr->bb_stage_time + job_bb_stage_in_duration);
 		}
 		resv_end = 0;
 		later_start = 0;
@@ -2340,7 +2340,7 @@ next_task:
 			while ((avail_bb = (time_interval_t *) list_pop(suitable_bb_times))) {
 				// Find the soonest when the stage-in could end in this bb interval.
 				// We are trying to put job not later than @start_tes.
-				best_bb_sin_end = MAX(MAX(now, avail_bb->begin_time) + job_ptr->bb_exp_stage_duration, start_res);
+				best_bb_sin_end = MAX(MAX(now, avail_bb->begin_time) + job_bb_stage_in_duration, start_res);
 
 				if (((best_bb_sin_end + time_limit * 60) < avail_bb->end_time)) {
 					start_res = MAX(start_res, best_bb_sin_end);
@@ -2572,7 +2572,7 @@ next_task:
 		// there will be enough bb space during whole execution and both stage-in and
 		// execution does not require bb space reserved for other job.
 		if (is_bb_job && 
-			 !_test_bb_availability(bb_space, job_ptr->start_time - job_ptr->bb_exp_stage_duration,
+			 !_test_bb_availability(bb_space, job_ptr->start_time - job_bb_stage_in_duration,
 			 						job_ptr->start_time + time_limit * 60, job_bb_space_req)) {
 			if (debug_flags & DEBUG_FLAG_BACKFILL) {
 				info("backfill: %pJ does not suffice bb requirements start_time=%u later_start %ld",
@@ -2590,7 +2590,7 @@ next_task:
 			later_start = 0;
 		}
 		
-		bb_start_time = job_ptr->start_time - job_ptr->bb_exp_stage_duration;
+		bb_start_time = job_ptr->start_time - job_bb_stage_in_duration;
 		bb_start_time = (bb_start_time / backfill_resolution) * backfill_resolution;
 
 		if (is_bb_job && bb_start_time <= now &&

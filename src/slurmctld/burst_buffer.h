@@ -231,4 +231,9 @@ extern uint64_t bb_g_job_get_size(job_record_t *job_ptr, uint64_t granularity);
  */
 extern int bb_g_job_get_state(job_record_t *job_ptr);
 
+/*
+ * For a given job, return it's expected stage-in_duration
+ */
+extern uint64_t bb_g_job_get_stage_in_duration(job_record_t *job_ptr);
+
 #endif /* !_SLURM_BURST_BUFFER_H */

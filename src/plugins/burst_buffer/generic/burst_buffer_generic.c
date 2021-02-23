@@ -310,3 +310,12 @@ extern int bb_p_job_get_state(job_record_t *job_ptr)
 {
 	return BB_STATE_PENDING;
 }
+
+
+/*
+ * For a given job, return it's expected stage-in duration.
+ */
+extern uint64_t bb_p_job_get_stage_in_duration(job_record_t *job_ptr)
+{
+	return 0;
+}

@@ -1641,6 +1641,13 @@ extern char *rpc_num2string(uint16_t opcode);
  */
 extern uint64_t suffix_mult(char *suffix);
 
+/*
+ * Given a time suffix, return the equivalent multiplier for the time
+ * portion. For example: "m" returns 60, "h" returns 3600, etc.
+ * The return value for an invalid suffix is NO_VAL64.
+ */
+extern uint64_t time_suffix_mult(char *suffix);
+
 #define safe_read(fd, buf, size) do {					\
 		int remaining = size;					\
 		char *ptr = (char *) buf;				\

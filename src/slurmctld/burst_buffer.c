@@ -83,6 +83,7 @@ typedef struct slurm_bb_ops {
 	uint64_t	(*job_get_size)(job_record_t *job_ptr,
 								uint64_t granularity);
 	int		(*job_get_state)(job_record_t *job_ptr);
+	uint64_t		(*job_get_stage_in_duration)(job_record_t *job_ptr);
 } slurm_bb_ops_t;
 
 /*
@@ -108,7 +109,8 @@ static const char *syms[] = {
 	"bb_p_job_cancel",
 	"bb_p_xlate_bb_2_tres_str",
 	"bb_p_job_get_size",
-	"bb_p_job_get_state"};
+	"bb_p_job_get_state",
+	"bb_p_job_get_stage_in_duration"};
 
 static int g_context_cnt = -1;
 static slurm_bb_ops_t *ops = NULL;
@@ -854,4 +856,28 @@ extern int bb_g_job_get_state(job_record_t *job_ptr)
 	END_TIMER2(__func__);
 
 	return rc;
+}
+
+
+/*
+ * For a given job, return it's expected stage-in_duration
+ */
+extern uint64_t bb_g_job_get_stage_in_duration(job_record_t *job_ptr)
+{
+	DEF_TIMERS;
+	int i;
+	uint64_t duration = 0;
+
+	START_TIMER;
+	if (bb_g_init() != SLURM_SUCCESS)
+		return 0;
+	slurm_mutex_lock(&g_context_lock);
+	for (i = 0; i < g_context_cnt; i++)
+	{
+		duration = (*(ops[i].job_get_stage_in_duration))(job_ptr);
+	}
+	slurm_mutex_unlock(&g_context_lock);
+	END_TIMER2(__func__);
+
+	return duration;
 }
