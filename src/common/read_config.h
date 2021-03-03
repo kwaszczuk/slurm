@@ -601,6 +601,18 @@ extern char *prolog_flags2str(uint16_t prolog_flags);
 extern uint16_t prolog_str2flags(char *prolog_flags);
 
 /*
+ * sched_flags2str - convert a SchedFlags uint16_t to the equivalent string
+ * Returns an xmalloc()ed string which the caller must free with xfree().
+ */
+extern char *sched_flags2str(uint16_t sched_flags);
+
+/*
+ * sched_str2flags - Convert a SchedulerFlags string to the equivalent uint64_t
+ * Returns SLURM_ERROR if invalid
+ */
+extern int sched_str2flags(char *sched_flags, uint16_t *flags_out);
+
+/*
  * debug_flags2str - convert a DebugFlags uint64_t to the equivalent string
  * Returns an xmalloc()ed string which the caller must free with xfree().
  */

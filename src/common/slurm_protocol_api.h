@@ -157,6 +157,11 @@ uint32_t slurm_get_cpu_freq_govs(void);
  */
 uint32_t slurm_get_prolog_flags(void);
 
+/* slurm_get_sched_flags
+ * RET SchedFlags value from slurm.conf
+ */
+uint32_t slurm_get_sched_flags(void);
+
 /* slurm_get_debug_flags
  * RET DebugFlags value from slurm.conf
  */

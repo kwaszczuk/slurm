@@ -374,6 +374,23 @@ uint32_t slurm_get_prolog_flags(void)
 	return prolog_flags;
 }
 
+/* slurm_get_sched_flags
+ * RET SchedFlags value from slurm.conf
+ */
+uint32_t slurm_get_sched_flags(void)
+{
+	uint32_t sched_flags = 0;
+	slurm_ctl_conf_t *conf;
+
+	if (slurmdbd_conf) {
+	} else {
+		conf = slurm_conf_lock();
+		sched_flags = conf->sched_flags;
+		slurm_conf_unlock();
+	}
+	return sched_flags;
+}
+
 /* slurm_get_debug_flags
  * RET DebugFlags value from slurm.conf
  */

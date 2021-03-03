@@ -776,6 +776,11 @@ extern int schedule(uint32_t job_limit)
 	if (slurmctld_config.scheduling_disabled)
 		return 0;
 
+	if (slurmctld_conf.sched_flags & SCHED_FLAG_DISABLE_FIFO) {
+		info("%s: FIFO scheduler is disabled by SchedulerFlags, not running.", __func__);
+		return 0;
+	}
+
 	gettimeofday(&now, NULL);
 	if (sched_last.tv_sec == 0) {
 		delta_t = sched_min_interval;

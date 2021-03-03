@@ -4518,6 +4518,7 @@ _pack_slurm_ctl_conf_msg(slurm_ctl_conf_info_msg_t * build_ptr, Buf buffer,
 		packstr(build_ptr->route_plugin, buffer);
 		packstr(build_ptr->salloc_default_command, buffer);
 		packstr(build_ptr->sbcast_parameters, buffer);
+		pack16(build_ptr->sched_flags, buffer);
 		packstr(build_ptr->sched_params, buffer);
 		packstr(build_ptr->sched_logfile, buffer);
 		pack16(build_ptr->sched_log_level, buffer);
@@ -5192,6 +5193,7 @@ _unpack_slurm_ctl_conf_msg(slurm_ctl_conf_info_msg_t **build_buffer_ptr,
 				       &uint32_tmp, buffer);
 		safe_unpackstr_xmalloc(&build_ptr->sbcast_parameters,
 				       &uint32_tmp, buffer);
+		safe_unpack16(&build_ptr->sched_flags, buffer);
 		safe_unpackstr_xmalloc(&build_ptr->sched_params,
 				       &uint32_tmp, buffer);
 		safe_unpackstr_xmalloc(&build_ptr->sched_logfile,
