@@ -3286,6 +3286,20 @@ extern uint64_t bb_p_get_system_size(void)
 }
 
 /*
+ * Return the free burst buffer size in MB
+ */
+extern uint64_t bb_p_get_free_system_size(void)
+{
+	uint64_t unfree_size = 0, size = 0;
+
+	slurm_mutex_lock(&bb_state.bb_mutex);
+	unfree_size = MAX(bb_state.unfree_space, bb_state.used_space);
+	size = (bb_state.total_space - unfree_size) / (1024 * 1024);	/* bytes to MB */
+	slurm_mutex_unlock(&bb_state.bb_mutex);
+	return size;
+}
+
+/*
  * Load the current burst buffer state (e.g. how much space is available now).
  * Run at the beginning of each scheduling cycle in order to recognize external
  * changes to the burst buffer state (e.g. capacity is added, removed, fails,

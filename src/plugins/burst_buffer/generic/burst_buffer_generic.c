@@ -109,6 +109,15 @@ extern uint64_t bb_p_get_system_size(void)
 }
 
 /*
+ * Return the total burst buffer size in MB
+ */
+extern uint64_t bb_p_get_free_system_size(void)
+{
+	uint64_t size = 0;
+	return size;
+}
+
+/*
  * Load the current burst buffer state (e.g. how much space is available now).
  * Run at the beginning of each scheduling cycle in order to recognize external
  * changes to the burst buffer state (e.g. capacity is added, removed, fails,

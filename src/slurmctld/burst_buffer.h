@@ -104,6 +104,12 @@ extern int bb_g_reconfig(void);
 extern uint64_t bb_g_get_system_size(char *name);
 
 /*
+ * Give the free burst buffer size in MB of a given plugin name (e.g. "cray");.
+ * If "name" is NULL, return the total space of all burst buffer plugins.
+ */
+extern uint64_t bb_g_get_free_system_size(char *name);
+
+/*
  * Preliminary validation of a job submit request with respect to burst buffer
  * options. Performed after setting default account + qos, but prior to
  * establishing job ID or creating script file.

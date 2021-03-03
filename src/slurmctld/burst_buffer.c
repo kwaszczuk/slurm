@@ -58,6 +58,7 @@
 
 typedef struct slurm_bb_ops {
 	uint64_t	(*get_system_size)	(void);
+	uint64_t	(*get_free_system_size)	(void);
 	int		(*load_state)	(bool init_config);
 	char *		(*get_status)	(uint32_t argc, char **argv);
 	int		(*state_pack)	(uid_t uid, Buf buffer,
@@ -91,6 +92,7 @@ typedef struct slurm_bb_ops {
  */
 static const char *syms[] = {
 	"bb_p_get_system_size",
+	"bb_p_get_free_system_size",
 	"bb_p_load_state",
 	"bb_p_get_status",
 	"bb_p_state_pack",
@@ -349,6 +351,33 @@ extern uint64_t bb_g_get_system_size(char *name)
 
 		if (g_context[i] && !xstrcmp(g_context[i]->type+offset, name)) {
 			size = (*(ops[i].get_system_size))();
+			break;
+		}
+	}
+	slurm_mutex_unlock(&g_context_lock);
+
+	return size;
+}
+
+/*
+ * Give the free burst buffer size in MB of a given plugin name (e.g. "cray");.
+ * If "name" is NULL, return the total space of all burst buffer plugins.
+ */
+extern uint64_t bb_g_get_free_system_size(char *name)
+{
+	uint64_t size = 0;
+	int i, offset = 0;
+
+	(void) bb_g_init();
+
+	if (xstrncmp(name, "burst_buffer/", 13))
+		offset = 13;
+
+	slurm_mutex_lock(&g_context_lock);
+	for (i = 0; i < g_context_cnt; i++) {
+
+		if (g_context[i] && !xstrcmp(g_context[i]->type+offset, name)) {
+			size = (*(ops[i].get_free_system_size))();
 			break;
 		}
 	}
