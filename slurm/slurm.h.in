@@ -2634,6 +2634,9 @@ typedef struct reservation_name_msg {
 #define PROLOG_FLAG_SERIAL 	0x0008 /* serially execute prolog/epilog */
 #define PROLOG_FLAG_X11		0x0010 /* enable slurm x11 forwarding support */
 
+#define SCHED_FLAG_DISABLE_FIFO  0x0001 /* disable fifo scheduler from running */
+#define SCHED_FLAG_BLOCKING_BB   0x0002 /* enable handling burst buffer using blocking logic */
+
 #define CTL_CONF_OR             0x00000001 /*SlurmdParameters=config_overrides*/
 #define CTL_CONF_SJC            0x00000002 /* AccountingStoreJobComment */
 #define CTL_CONF_DRJ            0x00000004 /* DisableRootJobs */
@@ -2839,6 +2842,8 @@ typedef struct slurm_ctl_conf {
 	char *route_plugin;     /* route plugin */
 	char *salloc_default_command; /* default salloc command */
 	char *sbcast_parameters; /* sbcast command options */
+	uint16_t sched_flags; /* set some flags for sched configuration
+				  see SCHED_FLAG_* */
 	char *sched_logfile;    /* where slurm Scheduler log gets written */
 	uint16_t sched_log_level;  /* configured level of slurm Scheduler log */
 	char *sched_params;	/* SchedulerParameters OR
