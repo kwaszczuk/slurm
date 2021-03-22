@@ -266,8 +266,8 @@ static void _add_bb_reservation(uint32_t start_time, uint32_t end_reserve,
 								bb_space_t res_space,
 								bb_space_map_t *bb_space,
 								int *bb_space_recs);
-static List _find_enough_bb_space(bb_space_t req_bb_space, bb_space_map_t *bb_space);
 static bool _test_bb_availability(bb_space_map_t *bb_space, time_t start_time, time_t end_time, bb_space_t req_space);
+static List _find_enough_bb_space(bb_space_t req_bb_space, bb_space_map_t *bb_space);
 static void _adjust_hetjob_prio(uint32_t *prio, uint32_t val);
 static int  _attempt_backfill(void);
 static int  _clear_job_estimates(void *x, void *arg);
@@ -360,7 +360,27 @@ static void _dump_node_space_table(node_space_map_t *node_space_ptr)
 		if ((i = node_space_ptr[i].next) == 0)
 			break;
 	}
-	info("=========================================");
+	info("backfill: =========================================");
+}
+
+/* Log resource allocate table */
+static void _dump_bb_space_table(bb_space_map_t *bb_space_ptr)
+{
+	int i = 0;
+	char begin_buf[32], end_buf[32], *node_list;
+
+	info("backfill: =========================================");
+	while (1) {
+		slurm_make_time_str(&bb_space_ptr[i].begin_time,
+				    begin_buf, sizeof(begin_buf));
+		slurm_make_time_str(&bb_space_ptr[i].end_time,
+				    end_buf, sizeof(end_buf));
+		info("backfill: Begin:%s End:%s Bb:%lld",
+		     begin_buf, end_buf, bb_space_ptr[i].avail_res);
+		if ((i = bb_space_ptr[i].next) == 0)
+			break;
+	}
+	info("backfill: =========================================");
 }
 
 static void _set_job_time_limit(job_record_t *job_ptr, uint32_t new_limit)
@@ -1429,7 +1449,7 @@ static int _bf_reserve_running(void *x, void *arg)
 	return SLURM_SUCCESS;
 }
 
-// Make bb reservation for jobs that already allocated theri bb (began stage-in process).
+// Make bb reservation for jobs that already allocated their bb (began stage-in process).
 static int _bf_reserve_bb_allocated(void *x, void *arg)
 {
 	job_record_t *job_ptr = (job_record_t *) x;
@@ -1820,14 +1840,22 @@ static int _attempt_backfill(void)
 
 		list_for_each(job_list, _bf_reserve_running,
 			      &node_space_handler);
-
-		bb_space_handler_t bb_space_handler;
-		bb_space_handler.bb_space = bb_space;
-		bb_space_handler.bb_space_recs = &bb_space_recs;
-
-		list_for_each(job_list, _bf_reserve_bb_allocated,
-			      &bb_space_handler);
 	}
+
+	bb_space_handler_t bb_space_handler;
+	bb_space_handler.bb_space = bb_space;
+	bb_space_handler.bb_space_recs = &bb_space_recs;
+
+	list_for_each(job_list, _bf_reserve_bb_allocated,
+				&bb_space_handler);
+
+	debug("backfill: NODES RESERVATIONS [INIT] BEGIN");
+	_dump_node_space_table(node_space);
+	debug("backfill: NODES RESERVATIONS [INIT] END");
+
+	debug("backfill: BB RESERVATIONS [INIT] BEGIN");
+	_dump_bb_space_table(bb_space);
+	debug("backfill: BB RESERVATIONS [INIT] END");
 
 	if (debug_flags & DEBUG_FLAG_BACKFILL_MAP)
 		_dump_node_space_table(node_space);
@@ -2989,9 +3017,9 @@ skip_start:
 					 node_space, &node_space_recs);
 
 			if (is_bb_job)
-			_add_bb_reservation(bb_start_time, end_reserve,
-								job_bb_space_req,
-								bb_space, &bb_space_recs);
+				_add_bb_reservation(bb_start_time, end_reserve,
+									job_bb_space_req,
+									bb_space, &bb_space_recs);
 		}
 		if (debug_flags & DEBUG_FLAG_BACKFILL_MAP)
 			_dump_node_space_table(node_space);
@@ -3411,7 +3439,7 @@ static void _add_bb_reservation(uint32_t start_time, uint32_t end_reserve,
 	{
 		if ((j = bb_space[i].next) == 0)
 			break;
-		if (bb_space[i].avail_res == bb_space[j].avail_res)
+		if (bb_space[i].avail_res != bb_space[j].avail_res)
 		{
 			i = j;
 			continue;
