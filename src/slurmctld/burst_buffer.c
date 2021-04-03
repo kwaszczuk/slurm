@@ -598,7 +598,7 @@ extern int bb_g_job_try_stage_in(void)
 		    (job_ptr->burst_buffer[0] == '\0'))
 			continue;
 		if ((job_ptr->start_time == 0) ||
-		    (job_ptr->start_time > now + 10 * 60 * 60))	/* ten hours */
+			(job_ptr->start_time - bb_g_job_get_stage_in_duration(job_ptr)) > now)
 			continue;
 		list_push(job_queue, job_ptr);
 	}

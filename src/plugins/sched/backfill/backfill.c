@@ -1428,7 +1428,6 @@ static int _bf_reserve_running(void *x, void *arg)
 	time_t start_time = job_ptr->start_time;
 	time_t end_time = job_ptr->end_time;
 
-	debug("backfill: %pJ job_state: %d", job_ptr, job_ptr->job_state & JOB_STATE_BASE);
 	if (!job_ptr || ! IS_JOB_RUNNING(job_ptr))
 		return SLURM_SUCCESS;
 	if (!job_ptr->job_resrcs || !(job_ptr->job_resrcs->whole_node ==
@@ -1468,6 +1467,7 @@ static int _bf_reserve_bb_allocated(void *x, void *arg)
 
 	uint64_t bb_space_req = bb_g_job_get_size(job_ptr, 1024 * 1024 /* Megabytes */);
 
+	// Make a reservation for both period of staging, and immediate following execution (stage_in_duration + time_limit).
 	time_t now = time(NULL);
 	time_t start_time = job_ptr->bb_stage_time;
 	time_t stg_end_time = start_time + bb_g_job_get_stage_in_duration(job_ptr);
@@ -2634,11 +2634,6 @@ next_task:
 		 * selected for this job to be allocated
 		 */
 
-		if (job_ptr->start_time < start_res || resv_end < job_ptr->start_time) {
-			debug("backfill: %pJ choosen time %d outside of assumed reservation window [%d, %d]!",
-				job_ptr, job_ptr->start_time, start_res, resv_end);
-		}
-
 		// Make sure that choosen starting time meets the requirement for bb such that
 		// there will be enough bb space during whole execution and both stage-in and
 		// execution does not require bb space reserved for other job.
@@ -2658,7 +2653,7 @@ next_task:
 				     job_ptr, (unsigned int)job_ptr->start_time, later_start);
 			}
 			if (is_bb_staged) {
-				debug("backfill: %pJ bb check failed for staged job, it should not happen!");
+				debug("backfill: %pJ bb check failed for staged job, it should not happen!", job_ptr);
 				staged_check_fails++;
 				if (staged_check_fails >= 5) {
 					continue;
@@ -2679,6 +2674,7 @@ next_task:
 		
 		bb_start_time = (bb_start_time / backfill_resolution) * backfill_resolution;
 
+		debug("backfill: %pJ bb_start_time: %d now: %d, %d", job_ptr, bb_start_time, now, bb_start_time <= now);
 		if (is_bb_job && !is_bb_staged && bb_start_time <= now &&
 		    ((bb = bb_g_job_test_stage_in(job_ptr, true)) != 1)) {
 			if (job_ptr->state_reason != WAIT_NO_REASON) {
