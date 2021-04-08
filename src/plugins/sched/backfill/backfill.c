@@ -1430,9 +1430,9 @@ static int _bf_reserve_running(void *x, void *arg)
 
 	if (!job_ptr || ! IS_JOB_RUNNING(job_ptr))
 		return SLURM_SUCCESS;
-	if (!job_ptr->job_resrcs || !(job_ptr->job_resrcs->whole_node ==
-				      WHOLE_NODE_REQUIRED))
-		return SLURM_SUCCESS;
+	// if (!job_ptr->job_resrcs || !(job_ptr->job_resrcs->whole_node ==
+	// 			      WHOLE_NODE_REQUIRED))
+	// 	return SLURM_SUCCESS;
 	if (slurm_job_preempt_mode(job_ptr) != PREEMPT_MODE_OFF)
 		return SLURM_SUCCESS;
 
@@ -1461,7 +1461,6 @@ static int _bf_reserve_bb_allocated(void *x, void *arg)
 		return SLURM_SUCCESS;
 
 	// only jobs that are not finished yet, but already began a stage-in needs to be handled
-	debug("backfill: %pJ bb_state: %d %d", job_ptr, bb_g_job_get_state(job_ptr), JOB_ALLOCATED_BB(job_ptr));
 	if (!JOB_ALLOCATED_BB(job_ptr))
 		return SLURM_SUCCESS;
 
@@ -1474,12 +1473,7 @@ static int _bf_reserve_bb_allocated(void *x, void *arg)
 	time_t end_time = !IS_JOB_RUNNING(job_ptr)
 							? MAX(now, stg_end_time) + job_ptr->time_limit * 60
 							: job_ptr->end_time;
-
-	debug("backfill: %pJ is running: %d, std_end: %d, end_time: %d, jp_end: %d", job_ptr, IS_JOB_RUNNING(job_ptr), stg_end_time, end_time, job_ptr->end_time);
-
 	end_time = (end_time / backfill_resolution) * backfill_resolution;
-
-	debug("backfill: %pJ reserving %lld %lld %lld", job_ptr, start_time, end_time, bb_space_req);
 	_add_bb_reservation(start_time, end_time,
 						bb_space_req,
 						bb_space, bbs_recs_ptr);
@@ -1857,6 +1851,7 @@ static int _attempt_backfill(void)
 	list_for_each(job_list, _bf_reserve_bb_allocated,
 				&bb_space_handler);
 
+	/*
 	debug("backfill: NODES RESERVATIONS [INIT] BEGIN");
 	_dump_node_space_table(node_space);
 	debug("backfill: NODES RESERVATIONS [INIT] END");
@@ -1864,6 +1859,7 @@ static int _attempt_backfill(void)
 	debug("backfill: BB RESERVATIONS [INIT] BEGIN");
 	_dump_bb_space_table(bb_space);
 	debug("backfill: BB RESERVATIONS [INIT] END");
+	*/
 
 	if (debug_flags & DEBUG_FLAG_BACKFILL_MAP)
 		_dump_node_space_table(node_space);
@@ -1875,7 +1871,7 @@ static int _attempt_backfill(void)
 		assoc_mgr_unlock(&qos_read_lock);
 	}
 
-	sort_job_queue(job_queue);
+	sort_job_queue_new(job_queue);
 
 	/* Ignore nodes that have been set as available during this cycle. */
 	bit_clear_all(bf_ignore_node_bitmap);
@@ -1909,12 +1905,9 @@ static int _attempt_backfill(void)
 		is_bb_job        = job_bb_state != BB_STATE_NOT_USED;
 		is_bb_staged     = job_bb_state >= BB_STATE_STAGING_IN;
 		staged_check_fails = 0;
-		if (is_bb_job)
-		{
-			job_bb_stage_in_duration = bb_g_job_get_stage_in_duration(job_ptr);
-			job_bb_space_req = bb_g_job_get_size(job_ptr, 1024 * 1024 /* Megabytes */);
-			job_bb_stage_end = is_bb_staged ? job_ptr->bb_stage_time + job_bb_stage_in_duration : 0;
-		}
+		job_bb_stage_in_duration = is_bb_job ? bb_g_job_get_stage_in_duration(job_ptr) : 0;
+		job_bb_space_req = is_bb_job ? bb_g_job_get_size(job_ptr, 1024 * 1024 /* Megabytes */) : 0;
+		job_bb_stage_end = is_bb_job && is_bb_staged ? job_ptr->bb_stage_time + job_bb_stage_in_duration : 0;
 
 		job_queue_rec_prom_resv(job_queue_rec);
 		xfree(job_queue_rec);
@@ -2285,6 +2278,7 @@ next_task:
 			}
 		}
 
+		int loop_cnt = 0;
  TRY_LATER:
 		if (slurmctld_config.shutdown_time ||
 		    (difftime(time(NULL), orig_sched_start) >=
@@ -2377,11 +2371,7 @@ next_task:
 		time_t best_bb_sin_end = 0;
 		if (is_bb_job) {
 			if (is_bb_staged) {
-				// TODO:
-				// use orig_sched_start instead of now, as during backfill we may reach a new second, thus
-				// invalidating staged jobs bb reservations
-				if (now != orig_sched_start) debug("backfill: NOW IS DIFFERENT FROM ORIG START!!!");
-				start_res = MAX(now, job_bb_stage_end);
+				start_res = MAX(start_res, MAX(now, job_bb_stage_end));
 			} else {
 				suitable_bb_times = _find_enough_bb_space(job_bb_space_req, bb_space);
 
@@ -2436,10 +2426,7 @@ next_task:
 		tmp_bitmap = bit_copy(avail_bitmap);
 
 		debug("backfill: %pJ trying to find reservation time, %lld %lld", job_ptr, start_res, end_time);
-
 		for (i = 0, j = 0; ; ) {
-			/* node_space[j].end_time <= avail_bb.end_time */
-
 			if ((node_space[j].end_time > start_res) &&
 			     node_space[j].next && (later_start == 0)) {
 				int tmp = node_space[j].next;
@@ -2469,7 +2456,7 @@ next_task:
 			}
 			if (node_space[j].end_time <= start_res)
 				;
-			else if (node_space[j].begin_time <= end_time) {
+			else if (node_space[j].begin_time < end_time) {
 				bit_and(avail_bitmap,
 					node_space[j].avail_bitmap);
 			} else
@@ -2498,9 +2485,15 @@ next_task:
 		     (!bit_super_set(job_ptr->details->req_node_bitmap,
 				     avail_bitmap))) ||
 		    (job_req_node_filter(job_ptr, avail_bitmap, true))) {
-			if (later_start && !job_no_reserve) {
+			loop_cnt++;
+			if (later_start && !job_no_reserve && loop_cnt < 200) {
 				job_ptr->start_time = 0;
 				goto TRY_LATER;
+			}
+
+			if (loop_cnt >= 200) {
+				debug("backfill: reservation loop detected!");
+				_dump_node_space_table(node_space);
 			}
 
 			/* Job can not start until too far in the future */
@@ -2589,7 +2582,7 @@ next_task:
 			for (j = 0; ; ) {
 				if (node_space[j].end_time <= start_res)
 					;
-				else if (node_space[j].begin_time <= end_time) {
+				else if (node_space[j].begin_time < end_time) {
 					if (node_space[j].begin_time >
 					    orig_end_time)
 						bit_and(avail_bitmap,
@@ -2639,18 +2632,19 @@ next_task:
 		// execution does not require bb space reserved for other job.
 		// Potentially extend existing bb reservation by the factor of backfill duration meanwhile
 		// use now instead of orig_sched_start, because we will be extending reservation to proper duration.
-		bb_start_time = is_bb_staged
-				? MAX(now, job_bb_stage_end) + time_limit * 60
-				// previously start_res was adjusted so that there is always enough time before to perform stagein,
-				// thus subtracting it's duration won't overflow @now time.
-				: job_ptr->start_time - job_bb_stage_in_duration;
+		if (is_bb_staged) {
+			bb_start_time = MAX(now, job_bb_stage_end) + time_limit * 60;
+		} else {
+			bb_start_time = MAX(now, job_ptr->start_time - job_bb_stage_in_duration);
+			job_ptr->start_time = bb_start_time + job_bb_stage_in_duration;
+		}
 		debug("backfill: %pJ testing bb requirement %d %d %d", job_ptr, is_bb_staged, job_bb_stage_end, bb_start_time);
 		if (is_bb_job && 
 			 !_test_bb_availability(bb_space, bb_start_time,
 			 						job_ptr->start_time + time_limit * 60, job_bb_space_req)) {
 			if (debug_flags & DEBUG_FLAG_BACKFILL) {
-				debug("backfill: %pJ does not suffice bb requirements start_time=%u later_start %ld",
-				     job_ptr, (unsigned int)job_ptr->start_time, later_start);
+				debug("backfill: %pJ does not suffice bb requirements [%d, %d] start_time=%u later_start %ld",
+				     job_ptr, bb_start_time, job_ptr->start_time + time_limit * 60, (unsigned int)job_ptr->start_time, later_start);
 			}
 			if (is_bb_staged) {
 				debug("backfill: %pJ bb check failed for staged job, it should not happen!", job_ptr);
@@ -2674,9 +2668,9 @@ next_task:
 		
 		bb_start_time = (bb_start_time / backfill_resolution) * backfill_resolution;
 
-		debug("backfill: %pJ bb_start_time: %d now: %d, %d", job_ptr, bb_start_time, now, bb_start_time <= now);
+		debug("backfill: %pJ job_start_time: %d bb_start_time: %d now: %d, %d", job_ptr, job_ptr->start_time, bb_start_time, now, bb_start_time <= now);
 		if (is_bb_job && !is_bb_staged && bb_start_time <= now &&
-		    ((bb = bb_g_job_test_stage_in(job_ptr, true)) != 1)) {
+		    ((bb = bb_g_job_test_stage_in(job_ptr, false)) != 1)) {
 			if (job_ptr->state_reason != WAIT_NO_REASON) {
 				;
 			} else if (bb == -1) {
@@ -2688,7 +2682,7 @@ next_task:
 			} else {	/* bb == 0 */
 				xfree(job_ptr->state_desc);
 				job_ptr->state_reason=WAIT_BURST_BUFFER_STAGING;
-				job_ptr->start_time = now + 1;
+				job_ptr->start_time = job_bb_stage_end + job_bb_stage_in_duration;
 			}
 			debug("backfill: %pJ. State=%s. Reason=%s. Priority=%u. Bb=%d.",
 				     job_ptr,
@@ -2872,6 +2866,22 @@ skip_start:
 						    job_ptr, false) == 1))
 						goto next_task;
 				}
+				start_time  = job_ptr->start_time;
+				end_reserve = job_ptr->start_time + boot_time +
+						(time_limit * 60);
+				start_time  = (start_time / backfill_resolution) *
+						backfill_resolution;
+				end_reserve = (end_reserve / backfill_resolution) *
+						backfill_resolution;
+				debug("backfill: %pJ successfully started, adding reservations %lld %lld, %lld", job_ptr, job_ptr->start_time, bb_start_time, end_reserve);
+				bit_not(avail_bitmap);
+				_add_reservation(start_time, end_reserve, avail_bitmap,
+						node_space, &node_space_recs);
+
+				if (is_bb_job)
+					_add_bb_reservation(bb_start_time, end_reserve,
+										job_bb_space_req,
+										bb_space, &bb_space_recs);
 				continue;
 			}
 		}
@@ -3066,7 +3076,7 @@ skip_start:
 			job_ptr->sched_nodes = bitmap2node_name(avail_bitmap);
 		}
 		bit_not(avail_bitmap);
-		debug("backfill: %pJ successfully scheduled, adding reservations %lld %lld", job_ptr, start_time, end_reserve);
+		debug("backfill: %pJ successfully scheduled, adding reservations %lld %lld %d %d", job_ptr, start_time, end_reserve, !bf_one_resv_per_job, !orig_start_time);
 		if ((!bf_one_resv_per_job || !orig_start_time) &&
 		    !(job_ptr->bit_flags & JOB_PROM)) {
 			_add_reservation(start_time, end_reserve, avail_bitmap,
@@ -3109,6 +3119,7 @@ skip_start:
 		}
 	}
 
+	/*
 	debug("backfill: NODES RESERVATIONS [CLEANUP] BEGIN");
 	_dump_node_space_table(node_space);
 	debug("backfill: NODES RESERVATIONS [CLEANUP] END");
@@ -3116,6 +3127,7 @@ skip_start:
 	debug("backfill: BB RESERVATIONS [CLEANUP] BEGIN");
 	_dump_bb_space_table(bb_space);
 	debug("backfill: BB RESERVATIONS [CLEANUP] END");
+	*/
 
 	if (job_ptr) {
 		/* Restore preemption state if needed. */
@@ -3345,6 +3357,18 @@ static void _add_reservation(uint32_t start_time, uint32_t end_reserve,
 			break;
 	}
 #endif
+	
+	/*
+	char begin_buf[32], end_buf[32], *node_list;
+	slurm_make_time_str(&start_time,
+				begin_buf, sizeof(begin_buf));
+	slurm_make_time_str(&end_reserve,
+				end_buf, sizeof(end_buf));
+	node_list = bitmap2node_name(res_bitmap);
+	debug("backfill: adding reservation %d %d %s", start_time, end_reserve, node_list);
+	xfree(node_list);
+	*/
+	
 
 	start_time = MAX(start_time, node_space[0].begin_time);
 	for (j = 0; ; ) {

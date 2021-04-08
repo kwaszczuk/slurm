@@ -241,6 +241,15 @@ extern void sort_job_queue(List job_queue);
 extern int sort_job_queue2(void *x, void *y);
 
 /*
+ * sort_job_queue_new - sort job_queue in descending priority order with prioritization of staged jobs
+ * IN/OUT job_queue - sorted job queue
+ */
+extern void sort_job_queue_new(List job_queue);
+
+/* Sorts first by staged property, then uses sort_job_queue2 */
+extern int sort_job_queue2_new(void *x, void *y);
+
+/*
  * Determine if a job's dependencies are met
  * Inputs: job_ptr
  * Outputs: was_changed (optional) -
