@@ -195,6 +195,7 @@ typedef struct create_buf_data {
 	char *pool;		/* Name of pool in which to create the buffer */
 	uint64_t size;		/* Size in bytes */
 	char *type;		/* Access type */
+        uint64_t stage_in_duration;		/* Expected stage-in duration in seconds */
 	uint32_t user_id;
 } create_buf_data_t;
 
@@ -476,7 +477,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 	char *bb_specs, *bb_hurry, *bb_name, *bb_type, *bb_access, *bb_pool;
 	char *end_ptr = NULL, *save_ptr = NULL, *sub_tok, *tok;
 	bool have_bb = false;
-	uint64_t tmp_cnt;
+	uint64_t tmp_cnt, bb_stage_in_duration;
 	int inx;
 	bb_job_t *bb_job;
 
@@ -639,6 +640,9 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 					bb_job->job_pool = xstrdup(
 						bb_state.bb_config.default_pool);
 				}
+                                if ((sub_tok = strstr(tok, "stage_in_duration="))) {
+                                        bb_job->stage_in_duration = bb_get_time_duration(sub_tok + 18);
+                                }
 				tmp_cnt = _set_granularity(tmp_cnt,
 							   bb_job->job_pool);
 				bb_job->req_size += tmp_cnt;
@@ -1471,7 +1475,7 @@ static int _queue_stage_in(job_record_t *job_ptr, bb_job_t *bb_job)
 				    job_ptr->sched_nodes, job_ptr))
 			xfree(client_nodes_file_nid);
 	}
-	setup_argv = xcalloc(20, sizeof(char *));	/* NULL terminated */
+	setup_argv = xcalloc(22, sizeof(char *));	/* NULL terminated */
 	setup_argv[0] = xstrdup("dw_wlm_cli");
 	setup_argv[1] = xstrdup("--function");
 	setup_argv[2] = xstrdup("setup");
@@ -1492,13 +1496,15 @@ static int _queue_stage_in(job_record_t *job_ptr, bb_job_t *bb_job)
 		   job_pool, bb_get_size_str(bb_job->total_size));
 	setup_argv[13] = xstrdup("--job");
 	setup_argv[14] = bb_handle_job_script(job_ptr, bb_job);
+	setup_argv[15] = xstrdup("--stageinduration");
+	xstrfmtcat(setup_argv[16], "%llu", bb_job->stage_in_duration);
 	if (client_nodes_file_nid) {
 #if defined(HAVE_NATIVE_CRAY)
-		setup_argv[15] = xstrdup("--nidlistfile");
+		setup_argv[17] = xstrdup("--nidlistfile");
 #else
-		setup_argv[15] = xstrdup("--nodehostnamefile");
+		setup_argv[17] = xstrdup("--nodehostnamefile");
 #endif
-		setup_argv[16] = xstrdup(client_nodes_file_nid);
+		setup_argv[18] = xstrdup(client_nodes_file_nid);
 	}
 	bb_limit_add(job_ptr->user_id, bb_job->total_size, job_pool, &bb_state,
 		     true);
@@ -2921,7 +2927,7 @@ static int _xlate_batch(job_desc_msg_t *job_desc)
  * burst_buffer options in a batch script file */
 static int _xlate_interactive(job_desc_msg_t *job_desc)
 {
-	char *access = NULL, *bb_copy = NULL, *capacity = NULL, *pool = NULL;
+	char *access = NULL, *bb_copy = NULL, *capacity = NULL, *pool = NULL, *stage_in_duration = NULL;
 	char *swap = NULL, *type = NULL;
 	char *end_ptr = NULL, *sep, *tok;
 	uint64_t buf_size = 0, swap_cnt = 0;
@@ -2992,6 +2998,18 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 		memset(tok, ' ', tok_len);
 	}
 
+	if ((tok = strstr(bb_copy, "stage_in_duration="))) {
+		stage_in_duration = xstrdup(tok + 18);
+		sep = strchr(stage_in_duration, ',');
+		if (sep)
+			sep[0] = '\0';
+		sep = strchr(stage_in_duration, ' ');
+		if (sep)
+			sep[0] = '\0';
+		tok_len = strlen(stage_in_duration) + 18;
+		memset(tok, ' ', tok_len);
+	}
+
 	if ((tok = strstr(bb_copy, "swap="))) {
 		swap_cnt = strtol(tok + 5, &end_ptr, 10);
 		if (swap_cnt == 0) {
@@ -3058,6 +3076,10 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 			if (pool) {
 				xstrfmtcat(job_desc->burst_buffer,
 					   " pool=%s", pool);
+			}
+			if (stage_in_duration != 0) {
+				xstrfmtcat(job_desc->burst_buffer,
+					   " stage_in_duration=%s", stage_in_duration);
 			}
 			if (type) {
 				xstrfmtcat(job_desc->burst_buffer,

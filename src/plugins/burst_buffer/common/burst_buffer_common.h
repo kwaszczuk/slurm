@@ -166,6 +166,7 @@ typedef struct bb_job {
 	int        retry_cnt;	/* Count of attempted retries */
 	uint64_t   req_size;	/* Bytes requested by job (excludes
 				 * persistent buffers) */
+        uint64_t stage_in_duration;	/* Expected duration of stage-in in seconds. */
 	int        state;	/* job state with respect to burst buffers,
 				 * See BB_STATE_* in slurm.h.in */
 	uint32_t   swap_size;	/* swap space required per node in GB */
@@ -277,6 +278,11 @@ extern void bb_free_alloc_buf(bb_alloc_t *bb_alloc);
  * recognizing various sufficies (MB, GB, TB, PB, and Nodes). Default units
  * are bytes. */
 extern uint64_t bb_get_size_num(char *tok, uint64_t granularity);
+
+/* Translate a burst buffer time duration specification in string form to numeric form,
+ * recognizing various (case insensitive) time sufficies e.g s/sec, m/min, h/hr.
+ * Default units are seconds. */
+extern uint64_t bb_get_time_duration(char *tok);
 
 /* Translate a burst buffer size specification in numeric form to string form,
  * recognizing various sufficies (KB, MB, GB, TB, PB, and Nodes). */

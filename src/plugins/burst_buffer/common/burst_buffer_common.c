@@ -859,6 +859,29 @@ extern uint64_t bb_get_size_num(char *tok, uint64_t granularity)
 	return bb_size_u;
 }
 
+/* Translate a burst buffer time duration specification in string form to numeric form,
+ * recognizing various (case insensitive) time sufficies e.g s/sec, m/min, h/hr.
+ * Default units are seconds. */
+extern uint64_t bb_get_time_duration(char *tok)
+{
+	char *tmp = NULL, *unit;
+	uint64_t bb_duration_i, mult;
+	uint64_t bb_duration_u = 0;
+
+	bb_duration_i = (uint64_t) strtoull(tok, &tmp, 10);
+	if ((bb_duration_i > 0) && tmp) {
+		bb_duration_u = bb_duration_i;
+		unit = xstrdup(tmp);
+		strtok(unit, " ");
+		if ((mult = time_suffix_mult(unit)) != NO_VAL64) {
+			bb_duration_u *= mult;
+		}
+		xfree(unit);
+	}
+
+	return bb_duration_u;
+}
+
 /* Translate a burst buffer size specification in numeric form to string form,
  * appending various sufficies (KiB, MiB, GB, TB, PB, and Nodes). Default units
  * are bytes. */
