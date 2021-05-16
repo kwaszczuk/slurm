@@ -1061,7 +1061,7 @@ extern void *backfill_agent(void *args)
 			_het_job_start_clear();
 		(void) _attempt_backfill();
 		last_backfill_time = time(NULL);
-		(void) bb_g_job_try_stage_in();
+		//(void) bb_g_job_try_stage_in();
 		unlock_slurmctld(all_locks);
 
 		slurm_mutex_lock(&check_bf_running_lock);
@@ -1354,9 +1354,9 @@ static int _bf_reserve_running(void *x, void *arg)
 
 	if (!job_ptr || ! IS_JOB_RUNNING(job_ptr))
 		return SLURM_SUCCESS;
-	if (!job_ptr->job_resrcs || !(job_ptr->job_resrcs->whole_node ==
-				      WHOLE_NODE_REQUIRED))
-		return SLURM_SUCCESS;
+	// if (!job_ptr->job_resrcs || !(job_ptr->job_resrcs->whole_node ==
+	//			      WHOLE_NODE_REQUIRED))
+	//	return SLURM_SUCCESS;
 	if (slurm_job_preempt_mode(job_ptr) != PREEMPT_MODE_OFF)
 		return SLURM_SUCCESS;
 
@@ -1693,7 +1693,7 @@ static int _attempt_backfill(void)
 		assoc_mgr_unlock(&qos_read_lock);
 	}
 
-	sort_job_queue(job_queue);
+	sort_job_queue_new(job_queue);
 
 	/* Ignore nodes that have been set as available during this cycle. */
 	bit_clear_all(bf_ignore_node_bitmap);
@@ -2216,7 +2216,7 @@ next_task:
 			}
 			if (node_space[j].end_time <= start_res)
 				;
-			else if (node_space[j].begin_time <= end_time) {
+			else if (node_space[j].begin_time < end_time) {
 				bit_and(avail_bitmap,
 					node_space[j].avail_bitmap);
 			} else
@@ -2334,7 +2334,7 @@ next_task:
 			end_time += boot_time;
 
 			for (j = 0; ; ) {
-				if (node_space[j].end_time <= start_res)
+				if (node_space[j].end_time < start_res)
 					;
 				else if (node_space[j].begin_time <= end_time) {
 					if (node_space[j].begin_time >
@@ -2388,7 +2388,7 @@ next_task:
 			later_start = 0;
 		}
 		if ((job_ptr->start_time <= now) &&
-		    ((bb = bb_g_job_test_stage_in(job_ptr, true)) != 1)) {
+		    ((bb = bb_g_job_test_stage_in(job_ptr, false)) != 1)) {
 			if (job_ptr->state_reason != WAIT_NO_REASON) {
 				;
 			} else if (bb == -1) {
@@ -2578,6 +2578,16 @@ skip_start:
 						    job_ptr, false) == 1))
 						goto next_task;
 				}
+				start_time  = job_ptr->start_time;
+				end_reserve = job_ptr->start_time + boot_time +
+						(time_limit * 60);
+				start_time  = (start_time / backfill_resolution) *
+						backfill_resolution;
+				end_reserve = (end_reserve / backfill_resolution) *
+						backfill_resolution;
+				bit_not(avail_bitmap);
+				_add_reservation(start_time, end_reserve, avail_bitmap,
+						node_space, &node_space_recs);
 				continue;
 			}
 		} else if (job_ptr->het_job_id != 0) {

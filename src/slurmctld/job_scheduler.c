@@ -2140,6 +2140,31 @@ extern int sort_job_queue2(void *x, void *y)
 	return -1;
 }
 
+/*
+ * sort_job_queue_new - sort job_queue in descending priority order with prioritization of staged jobs
+ * IN/OUT job_queue - sorted job queue
+ */
+extern void sort_job_queue_new(List job_queue)
+{
+	list_sort(job_queue, sort_job_queue2_new);
+}
+
+extern int sort_job_queue2_new(void *x, void *y)
+{
+	job_queue_rec_t *job_rec1 = *(job_queue_rec_t **) x;
+	job_queue_rec_t *job_rec2 = *(job_queue_rec_t **) y;
+	bool job_staged1 = bb_g_job_get_state(job_rec1->job_ptr) >= BB_STATE_STAGING_IN;
+	bool job_staged2 = bb_g_job_get_state(job_rec2->job_ptr) >= BB_STATE_STAGING_IN;
+
+	if (job_staged1 > job_staged2) {
+		return -1;
+	} else if (job_staged1 < job_staged2) {
+		return 1;
+	} else {
+		return sort_job_queue2(x, y);
+	}
+}
+
 /* The environment" variable is points to one big xmalloc. In order to
  * manipulate the array for a hetjob, we need to split it into an array
  * containing multiple xmalloc variables */

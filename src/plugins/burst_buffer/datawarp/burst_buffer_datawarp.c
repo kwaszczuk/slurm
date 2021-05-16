@@ -5714,3 +5714,21 @@ extern char *bb_p_xlate_bb_2_tres_str(char *burst_buffer)
 
 	return result;
 }
+
+/*
+ * For a given job, return it's bb state
+ */
+extern int bb_p_job_get_state(job_record_t *job_ptr)
+{
+	bb_job_t *bb_job;
+	int rc;
+
+	slurm_mutex_lock(&bb_state.bb_mutex);
+	if ((bb_job = _get_bb_job(job_ptr)))
+		rc = bb_job->state;
+	else
+		rc = BB_STATE_NOT_USED;
+	slurm_mutex_unlock(&bb_state.bb_mutex);
+
+	return rc;
+}

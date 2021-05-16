@@ -294,3 +294,11 @@ extern char *bb_p_xlate_bb_2_tres_str(char *burst_buffer)
 {
 	return NULL;
 }
+
+/*
+ * For a given job, return it's bb state
+ */
+extern int bb_p_job_get_state(job_record_t *job_ptr)
+{
+	return BB_STATE_PENDING;
+}
