@@ -118,6 +118,7 @@ extern void pack_all_stat(int resp, char **buffer_ptr, int *buffer_size,
 			       buffer);
 			pack32(slurmctld_diag_stats.schedule_queue_len, buffer);
 
+                        pack32(slurmctld_diag_stats.backfilled_burst_buffers, buffer);
 			pack32(slurmctld_diag_stats.backfilled_jobs, buffer);
 			pack32(slurmctld_diag_stats.last_backfilled_jobs,
 			       buffer);
@@ -186,6 +187,7 @@ extern void pack_all_stat(int resp, char **buffer_ptr, int *buffer_size,
 			       buffer);
 			pack32(slurmctld_diag_stats.schedule_queue_len, buffer);
 
+                        pack32(slurmctld_diag_stats.backfilled_burst_buffers, buffer);
 			pack32(slurmctld_diag_stats.backfilled_jobs, buffer);
 			pack32(slurmctld_diag_stats.last_backfilled_jobs,
 			       buffer);
@@ -230,8 +232,10 @@ extern void reset_stats(int level)
 	slurmctld_diag_stats.jobs_failed = 0;
 
 	/* Just resetting this value when reset requested explicitly */
-	if (level)
+	if (level) {
+		slurmctld_diag_stats.backfilled_burst_buffers = 0;
 		slurmctld_diag_stats.backfilled_jobs = 0;
+        }
 
 	slurmctld_diag_stats.last_backfilled_jobs = 0;
 	slurmctld_diag_stats.backfilled_het_jobs = 0;

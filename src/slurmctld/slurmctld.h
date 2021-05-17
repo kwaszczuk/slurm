@@ -181,6 +181,7 @@ typedef struct diag_stats {
 	uint32_t jobs_pending;
 	uint32_t jobs_running;
 
+	uint32_t backfilled_burst_buffers;
 	uint32_t backfilled_jobs;
 	uint32_t last_backfilled_jobs;
 	uint32_t backfilled_het_jobs;

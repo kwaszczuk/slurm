@@ -215,7 +215,7 @@ extern int bb_p_job_try_stage_in(List job_queue)
  *      1 - stage-in complete
  *     -1 - stage-in not started or burst buffer in some unexpected state
  */
-extern int bb_p_job_test_stage_in(job_record_t *job_ptr, bool test_only)
+extern int bb_p_job_test_stage_in(job_record_t *job_ptr, bool test_only, bool from_bf)
 {
 	return 1;
 }

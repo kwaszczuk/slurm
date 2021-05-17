@@ -2388,7 +2388,7 @@ next_task:
 			later_start = 0;
 		}
 		if ((job_ptr->start_time <= now) &&
-		    ((bb = bb_g_job_test_stage_in(job_ptr, false)) != 1)) {
+		    ((bb = bb_g_job_test_stage_in_bf(job_ptr, false)) != 1)) {
 			if (job_ptr->state_reason != WAIT_NO_REASON) {
 				;
 			} else if (bb == -1) {
@@ -2574,7 +2574,7 @@ skip_start:
 								  array_job_id);
 					if (job_ptr &&
 					    IS_JOB_PENDING(job_ptr) &&
-					    (bb_g_job_test_stage_in(
+					    (bb_g_job_test_stage_in_bf(
 						    job_ptr, false) == 1))
 						goto next_task;
 				}
