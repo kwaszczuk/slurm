@@ -122,6 +122,9 @@ static bb_state_t	bb_state;
 static uint32_t		last_persistent_id = 1;
 static char *		state_save_loc = NULL;
 
+/* Diagnostic  statistics */
+extern diag_stats_t slurmctld_diag_stats;
+
 /* These are defined here so when we link with something other than
  * the slurmctld we will have these symbols defined.  They will get
  * overwritten when linking with the slurmctld.
@@ -3949,7 +3952,7 @@ extern int bb_p_job_try_stage_in(List job_queue)
  *      1 - stage-in complete
  *     -1 - stage-in not started or burst buffer in some unexpected state
  */
-extern int bb_p_job_test_stage_in(job_record_t *job_ptr, bool test_only)
+extern int bb_p_job_test_stage_in(job_record_t *job_ptr, bool test_only, bool from_bf)
 {
 	bb_job_t *bb_job = NULL;
 	int rc = 1;
@@ -3981,6 +3984,9 @@ extern int bb_p_job_test_stage_in(job_record_t *job_ptr, bool test_only)
 		    (_test_size_limit(job_ptr, bb_job) == 0) &&
 		    (_alloc_job_bb(job_ptr, bb_job, false) == SLURM_SUCCESS)) {
 			rc = 0;	/* Setup/stage-in in progress */
+			if (from_bf) {
+				slurmctld_diag_stats.backfilled_burst_buffers++;
+			}
 		}
 	} else if (bb_job->state == BB_STATE_STAGING_IN) {
 		rc = 0;

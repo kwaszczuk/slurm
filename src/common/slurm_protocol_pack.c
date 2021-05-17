@@ -11423,6 +11423,7 @@ static int  _unpack_stats_response_msg(stats_info_response_msg_t **msg_ptr,
 			safe_unpack32(&msg->schedule_cycle_depth, buffer);
 			safe_unpack32(&msg->schedule_queue_len,	buffer);
 
+			safe_unpack32(&msg->bf_backfilled_burst_buffers, buffer);
 			safe_unpack32(&msg->bf_backfilled_jobs,	buffer);
 			safe_unpack32(&msg->bf_last_backfilled_jobs, buffer);
 			safe_unpack32(&msg->bf_cycle_counter,	buffer);
@@ -11497,6 +11498,7 @@ static int  _unpack_stats_response_msg(stats_info_response_msg_t **msg_ptr,
 			safe_unpack32(&msg->schedule_cycle_depth, buffer);
 			safe_unpack32(&msg->schedule_queue_len,	buffer);
 
+			safe_unpack32(&msg->bf_backfilled_burst_buffers, buffer);
 			safe_unpack32(&msg->bf_backfilled_jobs,	buffer);
 			safe_unpack32(&msg->bf_last_backfilled_jobs, buffer);
 			safe_unpack32(&msg->bf_cycle_counter,	buffer);

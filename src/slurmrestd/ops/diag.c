@@ -107,6 +107,8 @@ static int _op_handler_diag(const char *context_id,
 	data_set_int(data_key_set(d, "jobs_pending"), resp->jobs_pending);
 	data_set_int(data_key_set(d, "jobs_running"), resp->jobs_running);
 	data_set_int(data_key_set(d, "job_states_ts"), resp->job_states_ts);
+	data_set_int(data_key_set(d, "bf_backfilled_burst_buffers"),
+		     resp->bf_backfilled_burst_buffers);
 	data_set_int(data_key_set(d, "bf_backfilled_jobs"),
 		     resp->bf_backfilled_jobs);
 	data_set_int(data_key_set(d, "bf_last_backfilled_jobs"),

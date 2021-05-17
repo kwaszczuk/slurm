@@ -73,7 +73,7 @@ typedef struct slurm_bb_ops {
 	time_t		(*job_get_est_start) (job_record_t *job_ptr);
 	int		(*job_try_stage_in) (List job_queue);
 	int		(*job_test_stage_in) (job_record_t *job_ptr,
-					      bool test_only);
+					      bool test_only, bool from_bf);
 	int		(*job_begin) (job_record_t *job_ptr);
 	int		(*job_revoke_alloc) (job_record_t *job_ptr);
 	int		(*job_start_stage_out) (job_record_t *job_ptr);
@@ -637,7 +637,35 @@ extern int bb_g_job_test_stage_in(job_record_t *job_ptr, bool test_only)
 		rc = -1;
 	slurm_mutex_lock(&g_context_lock);
 	for (i = 0; i < g_context_cnt; i++) {
-		rc2 = (*(ops[i].job_test_stage_in))(job_ptr, test_only);
+		rc2 = (*(ops[i].job_test_stage_in))(job_ptr, test_only, false);
+		rc = MIN(rc, rc2);
+	}
+	slurm_mutex_unlock(&g_context_lock);
+	END_TIMER2(__func__);
+
+	return rc;
+}
+
+/*
+ * Determine if a job's burst buffer stage-in is complete
+ * job_ptr IN - Job to test
+ * test_only IN - If false, then attempt to load burst buffer if possible
+ *
+ * RET: 0 - stage-in is underway
+ *      1 - stage-in complete
+ *     -1 - stage-in not started or burst buffer in some unexpected state
+ */
+extern int bb_g_job_test_stage_in_bf(job_record_t *job_ptr, bool test_only)
+{
+	DEF_TIMERS;
+	int i, rc = 1, rc2;
+
+	START_TIMER;
+	if (bb_g_init() != SLURM_SUCCESS)
+		rc = -1;
+	slurm_mutex_lock(&g_context_lock);
+	for (i = 0; i < g_context_cnt; i++) {
+		rc2 = (*(ops[i].job_test_stage_in))(job_ptr, test_only, true);
 		rc = MIN(rc, rc2);
 	}
 	slurm_mutex_unlock(&g_context_lock);

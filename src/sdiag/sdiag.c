@@ -154,6 +154,8 @@ static int _print_stats(void)
 	} else
 		printf("\nBackfilling stats\n");
 
+	printf("\tTotal backfilled burst buffers (since last slurm start): %u\n",
+	       buf->bf_backfilled_burst_buffers);
 	printf("\tTotal backfilled jobs (since last slurm start): %u\n",
 	       buf->bf_backfilled_jobs);
 	printf("\tTotal backfilled jobs (since last stats cycle start): %u\n",

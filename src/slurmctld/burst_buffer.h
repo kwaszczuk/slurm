@@ -172,6 +172,17 @@ extern int bb_g_job_try_stage_in(void);
  */
 extern int bb_g_job_test_stage_in(job_record_t *job_ptr, bool test_only);
 
+/*
+ * Determine if a job's burst buffer stage-in is complete
+ * job_ptr IN - Job to test
+ * test_only IN - If false, then attempt to load burst buffer if possible
+ *
+ * RET: 0 - stage-in is underway
+ *      1 - stage-in complete
+ *     -1 - stage-in not started or burst buffer in some unexpected state
+ */
+extern int bb_g_job_test_stage_in_bf(job_record_t *job_ptr, bool test_only);
+
 /* Attempt to claim burst buffer resources.
  * At this time, bb_g_job_test_stage_in() should have been run successfully AND
  * the compute nodes selected for the job.
