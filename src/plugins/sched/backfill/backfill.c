@@ -2669,11 +2669,12 @@ next_task:
 		bb_start_time = (bb_start_time / backfill_resolution) * backfill_resolution;
 
 		debug("backfill: %pJ job_start_time: %d bb_start_time: %d now: %d, %d", job_ptr, job_ptr->start_time, bb_start_time, now, bb_start_time <= now);
-		if (is_bb_job && !is_bb_staged && bb_start_time <= now &&
-		    ((bb = bb_g_job_test_stage_in_bf(job_ptr, false)) != 1)) {
-			if (job_ptr->state_reason != WAIT_NO_REASON) {
-				;
-			} else if (bb == -1) {
+		if (is_bb_job
+		&& !is_bb_staged
+		&& bb_start_time <= now
+		&& (bb = bb_g_job_test_stage_in_bf(job_ptr, false)) != 1
+		&& (job_ptr->state_reason = WAIT_RESOURCES)) {
+			if (bb == -1) {
 				xfree(job_ptr->state_desc);
 				job_ptr->state_reason =
 					WAIT_BURST_BUFFER_RESOURCE;
@@ -2681,7 +2682,7 @@ next_task:
 					bb_g_job_get_est_start(job_ptr);
 			} else {	/* bb == 0 */
 				xfree(job_ptr->state_desc);
-				job_ptr->state_reason=WAIT_BURST_BUFFER_STAGING;
+				job_ptr->state_reason = WAIT_BURST_BUFFER_STAGING;
 				job_ptr->start_time = job_bb_stage_end + job_bb_stage_in_duration;
 			}
 			debug("backfill: %pJ. State=%s. Reason=%s. Priority=%u. Bb=%d.",
