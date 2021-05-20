@@ -2675,6 +2675,7 @@ next_task:
 		&& (bb = bb_g_job_test_stage_in_bf(job_ptr, false)) != 1
 		&& (job_ptr->state_reason = WAIT_RESOURCES)) {
 			if (bb == -1) {
+				debug("backfill: %pJ bb == -1, this should not happen!", job_ptr);
 				xfree(job_ptr->state_desc);
 				job_ptr->state_reason =
 					WAIT_BURST_BUFFER_RESOURCE;
@@ -2683,7 +2684,6 @@ next_task:
 			} else {	/* bb == 0 */
 				xfree(job_ptr->state_desc);
 				job_ptr->state_reason = WAIT_BURST_BUFFER_STAGING;
-				job_ptr->start_time = job_bb_stage_end + job_bb_stage_in_duration;
 			}
 			debug("backfill: %pJ. State=%s. Reason=%s. Priority=%u. Bb=%d.",
 				     job_ptr,

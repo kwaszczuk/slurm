@@ -412,6 +412,7 @@ static int _alloc_job_bb(job_record_t *job_ptr, bb_job_t *bb_job,
 
 	if (bb_job->state < BB_STATE_STAGING_IN) {
 		bb_job->state = BB_STATE_STAGING_IN;
+		job_ptr->bb_stage_time = time(NULL);
 		rc = _queue_stage_in(job_ptr, bb_job);
 		if (rc != SLURM_SUCCESS) {
 			bb_job->state = BB_STATE_TEARDOWN;
