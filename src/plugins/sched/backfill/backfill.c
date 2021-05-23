@@ -1460,6 +1460,10 @@ static int _bf_reserve_bb_allocated(void *x, void *arg)
 	if (!job_ptr)
 		return SLURM_SUCCESS;
 
+	// sometimes job still might be in job queue even if it finished (e.g when stage-out is still in progress)
+	if (!(IS_JOB_RUNNING(job_ptr) || IS_JOB_PENDING(job_ptr)))
+		return SLURM_SUCCESS;
+
 	// only jobs that are not finished yet, but already began a stage-in needs to be handled
 	if (!JOB_ALLOCATED_BB(job_ptr))
 		return SLURM_SUCCESS;
@@ -1470,9 +1474,11 @@ static int _bf_reserve_bb_allocated(void *x, void *arg)
 	time_t now = time(NULL);
 	time_t start_time = job_ptr->bb_stage_time;
 	time_t stg_end_time = start_time + bb_g_job_get_stage_in_duration(job_ptr);
-	time_t end_time = !IS_JOB_RUNNING(job_ptr)
-							? MAX(now, stg_end_time) + job_ptr->time_limit * 60
-							: job_ptr->end_time;
+	time_t end_time = IS_JOB_RUNNING(job_ptr)
+							? job_ptr->end_time
+							: IS_JOB_PENDING(job_ptr)
+								? MAX(now, stg_end_time) + job_ptr->time_limit * 60
+								: now;
 	end_time = (end_time / backfill_resolution) * backfill_resolution;
 	_add_bb_reservation(start_time, end_time,
 						bb_space_req,
@@ -1512,6 +1518,20 @@ static int _bf_reserve_nodes_staged(void *x, void *arg)
 			 ns_recs_ptr);
 
 	FREE_NULL_BITMAP(tmp_bitmap);
+
+	return SLURM_SUCCESS;
+}
+
+// Make nodes reservation for a job that started bb stage-in
+static int _find_delayed_stageout(void *x, void *arg)
+{
+	job_record_t *job_ptr = (job_record_t *) x;
+	int *ret = (int *) arg;
+
+	// job has finished (neither is running nor pending), but still has allocated bb
+	if (!IS_JOB_RUNNING(job_ptr) && !IS_JOB_PENDING(job_ptr) && JOB_ALLOCATED_BB(job_ptr)) {
+		*ret = 1;
+	}
 
 	return SLURM_SUCCESS;
 }
@@ -1875,6 +1895,15 @@ static int _attempt_backfill(void)
 
 	/* Ignore nodes that have been set as available during this cycle. */
 	bit_clear_all(bf_ignore_node_bitmap);
+
+	/* Skip backfill logic if there is problematic job, that execution has finished but stage-out did not */
+	int _find_delayed_stageout_ret = 0;
+	list_for_each(job_list, _find_delayed_stageout,
+				&_find_delayed_stageout_ret);
+	if (_find_delayed_stageout_ret == 1) {
+		info("backfill: problematic job found, skipping backfill!");
+		goto SKIP_BACKFILL;
+	}
 
 	while (1) {
 		uint32_t bf_array_task_id, bf_job_priority,
@@ -3119,6 +3148,8 @@ skip_start:
 				goto next_task;
 		}
 	}
+
+SKIP_BACKFILL:
 
 	/*
 	debug("backfill: NODES RESERVATIONS [CLEANUP] BEGIN");
