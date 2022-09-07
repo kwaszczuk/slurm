@@ -109,6 +109,15 @@ extern uint64_t bb_p_get_system_size(void)
 }
 
 /*
+ * Return the total burst buffer size in MB
+ */
+extern uint64_t bb_p_get_free_system_size(void)
+{
+	uint64_t size = 0;
+	return size;
+}
+
+/*
  * Load the current burst buffer state (e.g. how much space is available now).
  * Run at the beginning of each scheduling cycle in order to recognize external
  * changes to the burst buffer state (e.g. capacity is added, removed, fails,
@@ -215,7 +224,7 @@ extern int bb_p_job_try_stage_in(List job_queue)
  *      1 - stage-in complete
  *     -1 - stage-in not started or burst buffer in some unexpected state
  */
-extern int bb_p_job_test_stage_in(job_record_t *job_ptr, bool test_only)
+extern int bb_p_job_test_stage_in(job_record_t *job_ptr, bool test_only, bool from_bf)
 {
 	return 1;
 }
@@ -293,4 +302,29 @@ extern int bb_p_job_cancel(job_record_t *job_ptr)
 extern char *bb_p_xlate_bb_2_tres_str(char *burst_buffer)
 {
 	return NULL;
+}
+
+/*
+ * For a given job, return it's submitted burst buffer space requirement
+ */
+extern uint64_t bb_p_job_get_size(job_record_t *job_ptr, uint64_t granularity)
+{
+	return 0;
+}
+
+/*
+ * For a given job, return it's bb state
+ */
+extern int bb_p_job_get_state(job_record_t *job_ptr)
+{
+	return BB_STATE_PENDING;
+}
+
+
+/*
+ * For a given job, return it's expected stage-in duration.
+ */
+extern uint64_t bb_p_job_get_stage_in_duration(job_record_t *job_ptr)
+{
+	return 0;
 }

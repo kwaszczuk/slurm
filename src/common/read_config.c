@@ -363,6 +363,7 @@ s_p_options_t slurm_conf_options[] = {
 	{"SallocDefaultCommand", S_P_STRING},
 	{"SbcastParameters", S_P_STRING},
 	{"SchedulerAuth", S_P_STRING, _defunct_option},
+	{"SchedulerFlags", S_P_STRING},
 	{"SchedulerParameters", S_P_STRING},
 	{"SchedulerPort", S_P_UINT16},
 	{"SchedulerRootFilter", S_P_UINT16},
@@ -3000,6 +3001,7 @@ init_slurm_conf (slurm_ctl_conf_t *ctl_conf_ptr)
 	xfree (ctl_conf_ptr->route_plugin);
 	xfree( ctl_conf_ptr->salloc_default_command);
 	xfree( ctl_conf_ptr->sbcast_parameters);
+	ctl_conf_ptr->sched_flags				= 0;
 	xfree( ctl_conf_ptr->sched_params );
 	ctl_conf_ptr->sched_time_slice		= NO_VAL16;
 	xfree( ctl_conf_ptr->schedtype );
@@ -4612,6 +4614,16 @@ _validate_and_set_defaults(slurm_ctl_conf_t *conf, s_p_hashtbl_t *hashtbl)
 	(void) s_p_get_string(&conf->sbcast_parameters,
 			      "SbcastParameters", hashtbl);
 
+	if (s_p_get_string(&temp_str, "SchedulerFlags", hashtbl)) {
+		if (sched_str2flags(temp_str, &conf->sched_flags)
+		    != SLURM_SUCCESS) {
+			error("SchedulerFlags invalid: %s", temp_str);
+			return SLURM_ERROR;
+		}
+		xfree(temp_str);
+	} else	/* Default: no SchedulerFlags */
+		conf->sched_flags = 0;
+
 	(void) s_p_get_string(&conf->sched_params, "SchedulerParameters",
 			      hashtbl);
 
@@ -5159,6 +5171,65 @@ extern uint16_t prolog_str2flags(char *prolog_flags)
 		} else {
 			error("Invalid PrologFlag: %s", tok);
 			rc = NO_VAL16;
+			break;
+		}
+		tok = strtok_r(NULL, ",", &last);
+	}
+	xfree(tmp_str);
+
+	return rc;
+}
+
+/*
+ * sched_flags2str - convert a SchedFlags uint16_t to the equivalent string
+ * Keep in sync with sched_str2flags() below
+ */
+extern char * sched_flags2str(uint16_t sched_flags)
+{
+	char *rc = NULL;
+
+	if (sched_flags & SCHED_FLAG_BLOCKING_BB) {
+		if (rc)
+			xstrcat(rc, ",");
+		xstrcat(rc, "BlockingBB");
+	}
+
+	if (sched_flags & SCHED_FLAG_DISABLE_FIFO) {
+		if (rc)
+			xstrcat(rc, ",");
+		xstrcat(rc, "DisableFifo");
+	}
+
+	return rc;
+}
+
+/*
+ * sched_flags2str - convert a SchedFlags uint16_t to the equivalent string
+ * Keep in sync with sched_str2flags() below
+ */
+extern int sched_str2flags(char *sched_flags, uint16_t *flags_out)
+{
+	int rc = SLURM_SUCCESS;
+	char *tmp_str, *tok, *last = NULL;
+
+	xassert(flags_out);
+
+	(*flags_out) = 0;
+
+	if (!sched_flags)
+		return rc;
+
+	tmp_str = xstrdup(sched_flags);
+	tok = strtok_r(tmp_str, ",", &last);
+	while (tok) {
+		if (xstrcasecmp(tok, "BlockingBB") == 0)
+			(*flags_out) |= SCHED_FLAG_BLOCKING_BB;
+		else if (xstrcasecmp(tok, "DisableFifo") == 0)
+			(*flags_out) |= SCHED_FLAG_DISABLE_FIFO;
+		else {
+			error("Invalid SchedulerFlag: %s", tok);
+			(*flags_out) = 0;
+			rc = SLURM_ERROR;
 			break;
 		}
 		tok = strtok_r(NULL, ",", &last);

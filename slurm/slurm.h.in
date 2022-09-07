@@ -2634,6 +2634,9 @@ typedef struct reservation_name_msg {
 #define PROLOG_FLAG_SERIAL 	0x0008 /* serially execute prolog/epilog */
 #define PROLOG_FLAG_X11		0x0010 /* enable slurm x11 forwarding support */
 
+#define SCHED_FLAG_DISABLE_FIFO  0x0001 /* disable fifo scheduler from running */
+#define SCHED_FLAG_BLOCKING_BB   0x0002 /* enable handling burst buffer using blocking logic */
+
 #define CTL_CONF_OR             0x00000001 /*SlurmdParameters=config_overrides*/
 #define CTL_CONF_SJC            0x00000002 /* AccountingStoreJobComment */
 #define CTL_CONF_DRJ            0x00000004 /* DisableRootJobs */
@@ -2839,6 +2842,8 @@ typedef struct slurm_ctl_conf {
 	char *route_plugin;     /* route plugin */
 	char *salloc_default_command; /* default salloc command */
 	char *sbcast_parameters; /* sbcast command options */
+	uint16_t sched_flags; /* set some flags for sched configuration
+				  see SCHED_FLAG_* */
 	char *sched_logfile;    /* where slurm Scheduler log gets written */
 	uint16_t sched_log_level;  /* configured level of slurm Scheduler log */
 	char *sched_params;	/* SchedulerParameters OR
@@ -3021,6 +3026,7 @@ typedef struct stats_info_response_msg {
 	uint32_t jobs_running;
 	time_t   job_states_ts;
 
+	uint32_t bf_backfilled_burst_buffers;
 	uint32_t bf_backfilled_jobs;
 	uint32_t bf_last_backfilled_jobs;
 	uint32_t bf_backfilled_het_jobs;
@@ -4833,6 +4839,7 @@ void slurm_init_trigger_msg(trigger_info_t *trigger_info_msg);
 #define BB_FLAG_SET_EXEC_HOST		0x0020	/* Set execute host */
 
 #define BB_SIZE_IN_NODES	0x8000000000000000
+#define BB_STATE_NOT_USED	-0x0001		/* Job is not using burst buffers */
 #define BB_STATE_PENDING	0x0000		/* Placeholder: no action started */
 #define BB_STATE_ALLOCATING	0x0001		/* Cray: bbs_setup started */
 #define BB_STATE_ALLOCATED	0x0002		/* Cray: bbs_setup started */

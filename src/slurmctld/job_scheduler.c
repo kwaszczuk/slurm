@@ -776,6 +776,11 @@ extern int schedule(uint32_t job_limit)
 	if (slurmctld_config.scheduling_disabled)
 		return 0;
 
+	if (slurmctld_conf.sched_flags & SCHED_FLAG_DISABLE_FIFO) {
+		info("%s: FIFO scheduler is disabled by SchedulerFlags, not running.", __func__);
+		return 0;
+	}
+
 	gettimeofday(&now, NULL);
 	if (sched_last.tv_sec == 0) {
 		delta_t = sched_min_interval;
@@ -1007,7 +1012,7 @@ static int _schedule(uint32_t job_limit)
 	time_t now, last_job_sched_start, sched_start;
 	job_record_t *reject_array_job = NULL;
 	part_record_t *reject_array_part = NULL;
-	bool fail_by_part, wait_on_resv;
+	bool fail_by_part, wait_on_resv, is_bb_job;
 	uint32_t deadline_time_limit, save_time_limit = 0;
 	uint32_t prio_reserve;
 #if HAVE_SYS_PRCTL_H
@@ -1434,6 +1439,7 @@ next_part:
 		}
 
 		job_ptr->last_sched_eval = time(NULL);
+		is_bb_job = bb_g_job_get_state(job_ptr) != BB_STATE_NOT_USED;
 
 		if (job_ptr->preempt_in_progress)
 			continue;	/* scheduled in another partition */
@@ -1706,6 +1712,20 @@ next_task:
 			continue;
 		}
 
+		/* If there is insufficient burst buffers to allocate them now, block job's partition from scheduling */
+		if ((slurmctld_conf.sched_flags & SCHED_FLAG_BLOCKING_BB) && is_bb_job
+			 && bb_g_job_get_size(job_ptr, 1024 * 1024 /* megabyte */) > bb_g_get_free_system_size("burst_buffer/datawarp")) {
+			job_ptr->state_reason = WAIT_BURST_BUFFER_RESOURCE;
+			xfree(job_ptr->state_desc);
+			sched_debug3("%pJ. State=%s. Reason=%s. Priority=%u. Partition=%s.",
+				     job_ptr,
+				     job_state_string(job_ptr->job_state),
+				     job_reason_string(job_ptr->state_reason),
+				     job_ptr->priority, job_ptr->partition);
+			fail_by_part = true;
+			goto fail_this_part;
+		}
+
 		if (assoc_mgr_validate_assoc_id(acct_db_conn,
 						job_ptr->assoc_id,
 						accounting_enforce)) {
@@ -1772,7 +1792,10 @@ skip_start:
 				     job_state_string(job_ptr->job_state),
 				     job_reason_string(job_ptr->state_reason),
 				     job_ptr->priority);
-			continue;
+			if (slurmctld_conf.sched_flags & SCHED_FLAG_BLOCKING_BB)
+				fail_by_part = true;
+			else
+				continue;
 		} else if ((error_code == ESLURM_RESERVATION_BUSY) ||
 			   (error_code == ESLURM_RESERVATION_NOT_USABLE)) {
 			if (job_ptr->resv_ptr &&
@@ -1979,6 +2002,31 @@ out:
 extern void sort_job_queue(List job_queue)
 {
 	list_sort(job_queue, sort_job_queue2);
+}
+
+/*
+ * sort_job_queue_new - sort job_queue in descending priority order with prioritization of staged jobs
+ * IN/OUT job_queue - sorted job queue
+ */
+extern void sort_job_queue_new(List job_queue)
+{
+	list_sort(job_queue, sort_job_queue2_new);
+}
+
+extern int sort_job_queue2_new(void *x, void *y)
+{
+	job_queue_rec_t *job_rec1 = *(job_queue_rec_t **) x;
+	job_queue_rec_t *job_rec2 = *(job_queue_rec_t **) y;
+	bool job_staged1 = bb_g_job_get_state(job_rec1->job_ptr) >= BB_STATE_STAGING_IN;
+	bool job_staged2 = bb_g_job_get_state(job_rec2->job_ptr) >= BB_STATE_STAGING_IN;
+	
+	if (job_staged1 > job_staged2) {
+		return -1;
+	} else if (job_staged1 < job_staged2) {
+		return 1;
+	} else {
+		return sort_job_queue2(x, y);
+	}
 }
 
 /* Note this differs from the ListCmpF typedef since we want jobs sorted

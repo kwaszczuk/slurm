@@ -122,6 +122,9 @@ static bb_state_t	bb_state;
 static uint32_t		last_persistent_id = 1;
 static char *		state_save_loc = NULL;
 
+/* Diagnostic  statistics */
+extern diag_stats_t slurmctld_diag_stats;
+
 /* These are defined here so when we link with something other than
  * the slurmctld we will have these symbols defined.  They will get
  * overwritten when linking with the slurmctld.
@@ -194,6 +197,7 @@ typedef struct create_buf_data {
 	char *name;		/* Name of the persistent burst buffer */
 	char *pool;		/* Name of pool in which to create the buffer */
 	uint64_t size;		/* Size in bytes */
+	uint64_t stage_in_duration;		/* Expected stage-in duration in seconds */
 	char *type;		/* Access type */
 	uint32_t user_id;
 } create_buf_data_t;
@@ -408,6 +412,7 @@ static int _alloc_job_bb(job_record_t *job_ptr, bb_job_t *bb_job,
 
 	if (bb_job->state < BB_STATE_STAGING_IN) {
 		bb_job->state = BB_STATE_STAGING_IN;
+		job_ptr->bb_stage_time = time(NULL);
 		rc = _queue_stage_in(job_ptr, bb_job);
 		if (rc != SLURM_SUCCESS) {
 			bb_job->state = BB_STATE_TEARDOWN;
@@ -476,7 +481,7 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 	char *bb_specs, *bb_hurry, *bb_name, *bb_type, *bb_access, *bb_pool;
 	char *end_ptr = NULL, *save_ptr = NULL, *sub_tok, *tok;
 	bool have_bb = false;
-	uint64_t tmp_cnt;
+	uint64_t tmp_cnt, bb_stage_in_duration;
 	int inx;
 	bb_job_t *bb_job;
 
@@ -638,6 +643,9 @@ static bb_job_t *_get_bb_job(job_record_t *job_ptr)
 				} else {
 					bb_job->job_pool = xstrdup(
 						bb_state.bb_config.default_pool);
+				}
+				if ((sub_tok = strstr(tok, "stage_in_duration="))) {
+					bb_job->stage_in_duration = bb_get_time_duration(sub_tok + 18);
 				}
 				tmp_cnt = _set_granularity(tmp_cnt,
 							   bb_job->job_pool);
@@ -1471,7 +1479,7 @@ static int _queue_stage_in(job_record_t *job_ptr, bb_job_t *bb_job)
 				    job_ptr->sched_nodes, job_ptr))
 			xfree(client_nodes_file_nid);
 	}
-	setup_argv = xcalloc(20, sizeof(char *));	/* NULL terminated */
+	setup_argv = xcalloc(22, sizeof(char *));	/* NULL terminated */
 	setup_argv[0] = xstrdup("dw_wlm_cli");
 	setup_argv[1] = xstrdup("--function");
 	setup_argv[2] = xstrdup("setup");
@@ -1492,13 +1500,15 @@ static int _queue_stage_in(job_record_t *job_ptr, bb_job_t *bb_job)
 		   job_pool, bb_get_size_str(bb_job->total_size));
 	setup_argv[13] = xstrdup("--job");
 	setup_argv[14] = bb_handle_job_script(job_ptr, bb_job);
+	setup_argv[15] = xstrdup("--stageinduration");
+	xstrfmtcat(setup_argv[16], "%llu", bb_job->stage_in_duration);
 	if (client_nodes_file_nid) {
 #if defined(HAVE_NATIVE_CRAY)
-		setup_argv[15] = xstrdup("--nidlistfile");
+		setup_argv[17] = xstrdup("--nidlistfile");
 #else
-		setup_argv[15] = xstrdup("--nodehostnamefile");
+		setup_argv[17] = xstrdup("--nodehostnamefile");
 #endif
-		setup_argv[16] = xstrdup(client_nodes_file_nid);
+		setup_argv[18] = xstrdup(client_nodes_file_nid);
 	}
 	bb_limit_add(job_ptr->user_id, bb_job->total_size, job_pool, &bb_state,
 		     true);
@@ -1671,7 +1681,7 @@ static void *_start_stage_in(void *x)
 					     bb_job->total_size,
 					     stage_args->pool, &bb_state,
 					     true);
-				bb_alloc->create_time = time(NULL);
+				bb_alloc->create_time = job_ptr->bb_stage_time = time(NULL);
 			}
 		}
 	}
@@ -2921,7 +2931,7 @@ static int _xlate_batch(job_desc_msg_t *job_desc)
  * burst_buffer options in a batch script file */
 static int _xlate_interactive(job_desc_msg_t *job_desc)
 {
-	char *access = NULL, *bb_copy = NULL, *capacity = NULL, *pool = NULL;
+	char *access = NULL, *bb_copy = NULL, *capacity = NULL, *pool = NULL, *stage_in_duration = NULL;
 	char *swap = NULL, *type = NULL;
 	char *end_ptr = NULL, *sep, *tok;
 	uint64_t buf_size = 0, swap_cnt = 0;
@@ -2992,6 +3002,18 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 		memset(tok, ' ', tok_len);
 	}
 
+	if ((tok = strstr(bb_copy, "stage_in_duration="))) {
+		stage_in_duration = xstrdup(tok + 18);
+		sep = strchr(stage_in_duration, ',');
+		if (sep)
+			sep[0] = '\0';
+		sep = strchr(stage_in_duration, ' ');
+		if (sep)
+			sep[0] = '\0';
+		tok_len = strlen(stage_in_duration) + 18;
+		memset(tok, ' ', tok_len);
+	}
+
 	if ((tok = strstr(bb_copy, "swap="))) {
 		swap_cnt = strtol(tok + 5, &end_ptr, 10);
 		if (swap_cnt == 0) {
@@ -3058,6 +3080,10 @@ static int _xlate_interactive(job_desc_msg_t *job_desc)
 			if (pool) {
 				xstrfmtcat(job_desc->burst_buffer,
 					   " pool=%s", pool);
+			}
+			if (stage_in_duration != 0) {
+				xstrfmtcat(job_desc->burst_buffer,
+					   " stage_in_duration=%s", stage_in_duration);
 			}
 			if (type) {
 				xstrfmtcat(job_desc->burst_buffer,
@@ -3259,6 +3285,20 @@ extern uint64_t bb_p_get_system_size(void)
 
 	slurm_mutex_lock(&bb_state.bb_mutex);
 	size = bb_state.total_space / (1024 * 1024);	/* bytes to MB */
+	slurm_mutex_unlock(&bb_state.bb_mutex);
+	return size;
+}
+
+/*
+ * Return the free burst buffer size in MB
+ */
+extern uint64_t bb_p_get_free_system_size(void)
+{
+	uint64_t unfree_size = 0, size = 0;
+
+	slurm_mutex_lock(&bb_state.bb_mutex);
+	unfree_size = MAX(bb_state.unfree_space, bb_state.used_space);
+	size = (bb_state.total_space - unfree_size) / (1024 * 1024);	/* bytes to MB */
 	slurm_mutex_unlock(&bb_state.bb_mutex);
 	return size;
 }
@@ -3913,7 +3953,7 @@ extern int bb_p_job_try_stage_in(List job_queue)
  *      1 - stage-in complete
  *     -1 - stage-in not started or burst buffer in some unexpected state
  */
-extern int bb_p_job_test_stage_in(job_record_t *job_ptr, bool test_only)
+extern int bb_p_job_test_stage_in(job_record_t *job_ptr, bool test_only, bool from_bf)
 {
 	bb_job_t *bb_job = NULL;
 	int rc = 1;
@@ -3945,6 +3985,9 @@ extern int bb_p_job_test_stage_in(job_record_t *job_ptr, bool test_only)
 		    (_test_size_limit(job_ptr, bb_job) == 0) &&
 		    (_alloc_job_bb(job_ptr, bb_job, false) == SLURM_SUCCESS)) {
 			rc = 0;	/* Setup/stage-in in progress */
+			if (from_bf) {
+				slurmctld_diag_stats.backfilled_burst_buffers++;
+			}
 		}
 	} else if (bb_job->state == BB_STATE_STAGING_IN) {
 		rc = 0;
@@ -5691,4 +5734,55 @@ extern char *bb_p_xlate_bb_2_tres_str(char *burst_buffer)
 		xstrfmtcat(result, "%d=%"PRIu64, bb_state.tres_id, total);
 
 	return result;
+}
+
+/*
+ * For a given job, return it's submitted burst buffer space requirement
+ */
+extern uint64_t bb_p_job_get_size(job_record_t *job_ptr, uint64_t granularity)
+{
+	bb_job_t *bb_job;
+	uint64_t size = 0;
+
+	slurm_mutex_lock(&bb_state.bb_mutex);
+	if ((bb_job = _get_bb_job(job_ptr))) {
+		size = (bb_job->total_size + granularity - 1) / granularity;
+	}
+	slurm_mutex_unlock(&bb_state.bb_mutex);
+
+	return size;
+}
+
+/*
+ * For a given job, return it's bb state
+ */
+extern int bb_p_job_get_state(job_record_t *job_ptr)
+{
+	bb_job_t *bb_job;
+	int rc;
+
+	slurm_mutex_lock(&bb_state.bb_mutex);
+	if ((bb_job = _get_bb_job(job_ptr)))
+		rc = bb_job->state;
+	else
+		rc = BB_STATE_NOT_USED;
+	slurm_mutex_unlock(&bb_state.bb_mutex);
+
+	return rc;
+}
+
+/*
+ * For a given job, return it's expected stage-in duration.
+ */
+extern uint64_t bb_p_job_get_stage_in_duration(job_record_t *job_ptr)
+{
+	bb_job_t *bb_job;
+	uint64_t duration;
+
+	slurm_mutex_lock(&bb_state.bb_mutex);
+	if ((bb_job = _get_bb_job(job_ptr)))
+		duration = bb_job->stage_in_duration;
+	slurm_mutex_unlock(&bb_state.bb_mutex);
+
+	return duration;
 }

@@ -293,6 +293,7 @@ slurm_ctl_conf_to_hv(slurm_ctl_conf_t *conf, HV *hv)
 	if (conf->salloc_default_command)
 		STORE_FIELD(hv, conf, salloc_default_command, charp);
 
+	STORE_FIELD(hv, conf, sched_flags, uint16_t);
 	if (conf->sched_logfile)
 		STORE_FIELD(hv, conf, sched_logfile, charp);
 	STORE_FIELD(hv, conf, sched_log_level, uint16_t);
@@ -568,6 +569,7 @@ hv_to_slurm_ctl_conf(HV *hv, slurm_ctl_conf_t *conf)
 	FETCH_FIELD(hv, conf, route_plugin, charp, FALSE);
 	FETCH_FIELD(hv, conf, salloc_default_command, charp, FALSE);
 
+	FETCH_FIELD(hv, conf, sched_flags, uint16_t, TRUE);
 	FETCH_FIELD(hv, conf, sched_logfile, charp, FALSE);
 	FETCH_FIELD(hv, conf, sched_log_level, uint16_t, TRUE);
 	FETCH_FIELD(hv, conf, sched_params, charp, FALSE);

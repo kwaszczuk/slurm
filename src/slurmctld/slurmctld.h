@@ -181,6 +181,7 @@ typedef struct diag_stats {
 	uint32_t jobs_pending;
 	uint32_t jobs_running;
 
+	uint32_t backfilled_burst_buffers;
 	uint32_t backfilled_jobs;
 	uint32_t last_backfilled_jobs;
 	uint32_t backfilled_het_jobs;
@@ -687,6 +688,8 @@ struct job_record {
 	uint32_t bit_flags;             /* various job flags */
 	char *burst_buffer;		/* burst buffer specification */
 	char *burst_buffer_state;	/* burst buffer state */
+	time_t bb_stage_time;		/* time stage-in actually began */
+	time_t bb_exp_stage_duration;		/* expect time that stage-in will take (in seconds) */
 	char *clusters;			/* clusters job is submitted to with -M
 					   option */
 	char *comment;			/* arbitrary comment */

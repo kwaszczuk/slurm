@@ -5909,3 +5909,32 @@ extern uint64_t suffix_mult(char *suffix)
 
 	return multiplier;
 }
+
+/*
+ * Given a time suffix, return the equivalent multiplier for the time
+ * portion. For example: "m" returns 60, "h" returns 3600, etc.
+ * The return value for an invalid suffix is NO_VAL64.
+ */
+extern uint64_t time_suffix_mult(char *suffix)
+{
+	uint64_t multiplier;
+
+	if (!suffix || (suffix[0] == '\0')) {
+		multiplier = 1;
+
+	} else if (!xstrcasecmp(suffix, "s") ||
+		   !xstrcasecmp(suffix, "sec")) {
+		multiplier = 1;
+	} else if (!xstrcasecmp(suffix, "m") ||
+		   !xstrcasecmp(suffix, "min")) {
+		multiplier = 60;
+	} else if (!xstrcasecmp(suffix, "h") ||
+		   !xstrcasecmp(suffix, "hr")) {
+		multiplier = 3600;
+	} else {
+		debug("%s: Unrecognized time suffix '%s'", __func__, suffix);
+		multiplier = NO_VAL64;
+	}
+
+	return multiplier;
+}

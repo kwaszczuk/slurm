@@ -58,6 +58,7 @@
 
 typedef struct slurm_bb_ops {
 	uint64_t	(*get_system_size)	(void);
+	uint64_t	(*get_free_system_size)	(void);
 	int		(*load_state)	(bool init_config);
 	char *		(*get_status)	(uint32_t argc, char **argv);
 	int		(*state_pack)	(uid_t uid, Buf buffer,
@@ -72,7 +73,7 @@ typedef struct slurm_bb_ops {
 	time_t		(*job_get_est_start) (job_record_t *job_ptr);
 	int		(*job_try_stage_in) (List job_queue);
 	int		(*job_test_stage_in) (job_record_t *job_ptr,
-					      bool test_only);
+					      bool test_only, bool from_bf);
 	int		(*job_begin) (job_record_t *job_ptr);
 	int		(*job_revoke_alloc) (job_record_t *job_ptr);
 	int		(*job_start_stage_out) (job_record_t *job_ptr);
@@ -80,6 +81,10 @@ typedef struct slurm_bb_ops {
 	int		(*job_test_stage_out) (job_record_t *job_ptr);
 	int		(*job_cancel) (job_record_t *job_ptr);
 	char *		(*xlate_bb_2_tres_str) (char *burst_buffer);
+	uint64_t	(*job_get_size)(job_record_t *job_ptr,
+								uint64_t granularity);
+	int		(*job_get_state)(job_record_t *job_ptr);
+	uint64_t		(*job_get_stage_in_duration)(job_record_t *job_ptr);
 } slurm_bb_ops_t;
 
 /*
@@ -87,6 +92,7 @@ typedef struct slurm_bb_ops {
  */
 static const char *syms[] = {
 	"bb_p_get_system_size",
+	"bb_p_get_free_system_size",
 	"bb_p_load_state",
 	"bb_p_get_status",
 	"bb_p_state_pack",
@@ -103,8 +109,10 @@ static const char *syms[] = {
 	"bb_p_job_test_post_run",
 	"bb_p_job_test_stage_out",
 	"bb_p_job_cancel",
-	"bb_p_xlate_bb_2_tres_str"
-};
+	"bb_p_xlate_bb_2_tres_str",
+	"bb_p_job_get_size",
+	"bb_p_job_get_state",
+	"bb_p_job_get_stage_in_duration"};
 
 static int g_context_cnt = -1;
 static slurm_bb_ops_t *ops = NULL;
@@ -352,6 +360,33 @@ extern uint64_t bb_g_get_system_size(char *name)
 }
 
 /*
+ * Give the free burst buffer size in MB of a given plugin name (e.g. "cray");.
+ * If "name" is NULL, return the total space of all burst buffer plugins.
+ */
+extern uint64_t bb_g_get_free_system_size(char *name)
+{
+	uint64_t size = 0;
+	int i, offset = 0;
+
+	(void) bb_g_init();
+
+	if (xstrncmp(name, "burst_buffer/", 13))
+		offset = 13;
+
+	slurm_mutex_lock(&g_context_lock);
+	for (i = 0; i < g_context_cnt; i++) {
+
+		if (g_context[i] && !xstrcmp(g_context[i]->type+offset, name)) {
+			size = (*(ops[i].get_free_system_size))();
+			break;
+		}
+	}
+	slurm_mutex_unlock(&g_context_lock);
+
+	return size;
+}
+
+/*
  * Preliminary validation of a job submit request with respect to burst buffer
  * options. Performed after setting default account + qos, but prior to
  * establishing job ID or creating script file.
@@ -563,7 +598,7 @@ extern int bb_g_job_try_stage_in(void)
 		    (job_ptr->burst_buffer[0] == '\0'))
 			continue;
 		if ((job_ptr->start_time == 0) ||
-		    (job_ptr->start_time > now + 10 * 60 * 60))	/* ten hours */
+			(job_ptr->start_time - bb_g_job_get_stage_in_duration(job_ptr)) > now)
 			continue;
 		list_push(job_queue, job_ptr);
 	}
@@ -602,7 +637,35 @@ extern int bb_g_job_test_stage_in(job_record_t *job_ptr, bool test_only)
 		rc = -1;
 	slurm_mutex_lock(&g_context_lock);
 	for (i = 0; i < g_context_cnt; i++) {
-		rc2 = (*(ops[i].job_test_stage_in))(job_ptr, test_only);
+		rc2 = (*(ops[i].job_test_stage_in))(job_ptr, test_only, false);
+		rc = MIN(rc, rc2);
+	}
+	slurm_mutex_unlock(&g_context_lock);
+	END_TIMER2(__func__);
+
+	return rc;
+}
+
+/*
+ * Determine if a job's burst buffer stage-in is complete
+ * job_ptr IN - Job to test
+ * test_only IN - If false, then attempt to load burst buffer if possible
+ *
+ * RET: 0 - stage-in is underway
+ *      1 - stage-in complete
+ *     -1 - stage-in not started or burst buffer in some unexpected state
+ */
+extern int bb_g_job_test_stage_in_bf(job_record_t *job_ptr, bool test_only)
+{
+	DEF_TIMERS;
+	int i, rc = 1, rc2;
+
+	START_TIMER;
+	if (bb_g_init() != SLURM_SUCCESS)
+		rc = -1;
+	slurm_mutex_lock(&g_context_lock);
+	for (i = 0; i < g_context_cnt; i++) {
+		rc2 = (*(ops[i].job_test_stage_in))(job_ptr, test_only, true);
 		rc = MIN(rc, rc2);
 	}
 	slurm_mutex_unlock(&g_context_lock);
@@ -804,4 +867,74 @@ extern char *bb_g_xlate_bb_2_tres_str(char *burst_buffer)
 	END_TIMER2(__func__);
 
 	return tmp;
+}
+
+/*
+ * For a given job, return it's submitted burst buffer space requirement)
+ */
+extern uint64_t bb_g_job_get_size(job_record_t *job_ptr, uint64_t granularity)
+{
+	DEF_TIMERS;
+	int i;
+	uint64_t size = 0;
+
+	START_TIMER;
+	if (bb_g_init() != SLURM_SUCCESS)
+		return 0;
+	slurm_mutex_lock(&g_context_lock);
+	for (i = 0; i < g_context_cnt; i++)
+	{
+		size += (*(ops[i].job_get_size))(job_ptr, granularity);
+	}
+	slurm_mutex_unlock(&g_context_lock);
+	END_TIMER2(__func__);
+
+	return size;
+}
+
+/*
+ * For a given job, return it's bb state
+ */
+extern int bb_g_job_get_state(job_record_t *job_ptr)
+{
+	DEF_TIMERS;
+	int i, rc = BB_STATE_COMPLETE, rc2;
+
+	START_TIMER;
+	if (bb_g_init() != SLURM_SUCCESS)
+		return 0;
+	slurm_mutex_lock(&g_context_lock);
+	for (i = 0; i < g_context_cnt; i++)
+	{
+		rc2 = (*(ops[i].job_get_state))(job_ptr);
+		rc = MIN(rc, rc2);
+	}
+	slurm_mutex_unlock(&g_context_lock);
+	END_TIMER2(__func__);
+
+	return rc;
+}
+
+
+/*
+ * For a given job, return it's expected stage-in_duration
+ */
+extern uint64_t bb_g_job_get_stage_in_duration(job_record_t *job_ptr)
+{
+	DEF_TIMERS;
+	int i;
+	uint64_t duration = 0;
+
+	START_TIMER;
+	if (bb_g_init() != SLURM_SUCCESS)
+		return 0;
+	slurm_mutex_lock(&g_context_lock);
+	for (i = 0; i < g_context_cnt; i++)
+	{
+		duration = (*(ops[i].job_get_stage_in_duration))(job_ptr);
+	}
+	slurm_mutex_unlock(&g_context_lock);
+	END_TIMER2(__func__);
+
+	return duration;
 }

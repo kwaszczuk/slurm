@@ -884,6 +884,7 @@ static void _fill_ctld_conf(slurm_ctl_conf_t * conf_ptr)
 	conf_ptr->salloc_default_command =xstrdup(conf->salloc_default_command);
 	conf_ptr->sbcast_parameters   = xstrdup(conf->sbcast_parameters);
 
+	conf_ptr->sched_flags         = conf->sched_flags;
 	conf_ptr->sched_params        = xstrdup(conf->sched_params);
 	conf_ptr->sched_logfile       = xstrdup(conf->sched_logfile);
 	conf_ptr->sched_log_level     = conf->sched_log_level;

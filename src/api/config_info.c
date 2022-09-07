@@ -1439,6 +1439,11 @@ extern void *slurm_ctl_conf_2_key_pairs (slurm_ctl_conf_t* slurm_ctl_conf_ptr)
 	list_append(ret_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("SchedulerFlags");
+	key_pair->value = sched_flags2str(slurm_ctl_conf_ptr->sched_flags);
+	list_append(ret_list, key_pair);
+
+	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("SchedulerParameters");
 	key_pair->value = xstrdup(slurm_ctl_conf_ptr->sched_params);
 	list_append(ret_list, key_pair);

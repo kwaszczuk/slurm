@@ -41,6 +41,8 @@
 #include "src/common/pack.h"
 #include "src/slurmctld/slurmctld.h"
 
+typedef uint64_t bb_space_t;
+
 /*
  * Initialize the burst buffer infrastructure.
  *
@@ -100,6 +102,12 @@ extern int bb_g_reconfig(void);
  * If "name" is NULL, return the total space of all burst buffer plugins.
  */
 extern uint64_t bb_g_get_system_size(char *name);
+
+/*
+ * Give the free burst buffer size in MB of a given plugin name (e.g. "cray");.
+ * If "name" is NULL, return the total space of all burst buffer plugins.
+ */
+extern uint64_t bb_g_get_free_system_size(char *name);
 
 /*
  * Preliminary validation of a job submit request with respect to burst buffer
@@ -164,6 +172,17 @@ extern int bb_g_job_try_stage_in(void);
  */
 extern int bb_g_job_test_stage_in(job_record_t *job_ptr, bool test_only);
 
+/*
+ * Determine if a job's burst buffer stage-in is complete
+ * job_ptr IN - Job to test
+ * test_only IN - If false, then attempt to load burst buffer if possible
+ *
+ * RET: 0 - stage-in is underway
+ *      1 - stage-in complete
+ *     -1 - stage-in not started or burst buffer in some unexpected state
+ */
+extern int bb_g_job_test_stage_in_bf(job_record_t *job_ptr, bool test_only);
+
 /* Attempt to claim burst buffer resources.
  * At this time, bb_g_job_test_stage_in() should have been run successfully AND
  * the compute nodes selected for the job.
@@ -218,5 +237,20 @@ extern int bb_g_job_cancel(job_record_t *job_ptr);
  * Caller must xfree the return value
  */
 extern char *bb_g_xlate_bb_2_tres_str(char *burst_buffer);
+
+/*
+ * For a given job, return it's submitted burst buffer space requirement
+ */
+extern uint64_t bb_g_job_get_size(job_record_t *job_ptr, uint64_t granularity);
+
+/*
+ * For a given job, return it's bb state
+ */
+extern int bb_g_job_get_state(job_record_t *job_ptr);
+
+/*
+ * For a given job, return it's expected stage-in_duration
+ */
+extern uint64_t bb_g_job_get_stage_in_duration(job_record_t *job_ptr);
 
 #endif /* !_SLURM_BURST_BUFFER_H */
